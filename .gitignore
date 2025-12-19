@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+backend/venv/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+facebook_bot.db
+backend/facebook_bot.db
+backend/*.db
+
+# Chrome Profile (حساس!)
+chrome_profile/
+backend/chrome_profile/
+
+# Environment
+.env
+.env.local
+backend/.env
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Screenshots
+*.png
+*.jpg
+blocked_*.png
+backend/*.png
+
+# Node modules
+node_modules/
+.next/
