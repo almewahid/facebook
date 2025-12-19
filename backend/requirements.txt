@@ -1,0 +1,42 @@
+# FastAPI
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
+
+# Selenium & WebDriver
+selenium==4.15.2
+webdriver-manager==4.0.1
+undetected-chromedriver==3.5.5
+
+# AI & API Clients
+anthropic==0.7.7
+httpx==0.25.1
+
+# Task Queue
+celery==5.3.4
+redis==5.0.1
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+
+# Utilities
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Notifications
+plyer==2.1.0
+
+# Monitoring
+psutil==5.9.6
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1

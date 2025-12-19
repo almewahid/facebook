@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./facebook_bot.db
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PAGE_URL=${PAGE_URL}
+      - MAX_GROUPS_PER_SESSION=${MAX_GROUPS_PER_SESSION:-7}
+      - DELAY_BETWEEN_CYCLES=${DELAY_BETWEEN_CYCLES:-3600}
+    volumes:
+      - ./backend:/app
+      - bot_data:/app/chrome_profile
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  bot_data:
+
+networks:
+  app-network:
+    driver: bridge
