@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -21,11 +21,11 @@ class Post(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey("facebook_groups.id"))
-    status = Column(String)
-    error_message = Column(Text, nullable=True)
-    post_url = Column(String, nullable=True)
-    cycle_number = Column(Integer)
+    status = Column(String, default="pending")  # success, failed, skipped, pending
+    post_url = Column(String, nullable=True)  # ← جديد! رابط المنشور
+    error_message = Column(String, nullable=True)
     duration_seconds = Column(Float, nullable=True)
+    cycle_number = Column(Integer, default=1)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     group = relationship("FacebookGroup", back_populates="posts")
@@ -42,8 +42,8 @@ class BotLog(Base):
     __tablename__ = "bot_logs"
     
     id = Column(Integer, primary_key=True, index=True)
-    level = Column(String)
-    message = Column(Text)
+    level = Column(String)  # INFO, WARNING, ERROR
+    message = Column(String)
     details = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -51,7 +51,7 @@ class AIInsight(Base):
     __tablename__ = "ai_insights"
     
     id = Column(Integer, primary_key=True, index=True)
-    insight_type = Column(String)
+    insight_type = Column(String)  # timing, content, targeting
     content = Column(Text)
     confidence = Column(Float)
     applied = Column(Boolean, default=False)

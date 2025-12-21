@@ -57,6 +57,28 @@ class BotConfigCreate(BotConfigBase):
 class BotConfigUpdate(BaseModel):
     value: str
 
+class ScheduleConfig(BaseModel):
+    """إعدادات الجدولة الذكية"""
+    enabled: bool = True
+    start_hour: int = 8
+    end_hour: int = 18
+    max_groups_per_session: int = 5
+    min_delay: int = 90
+    max_delay: int = 150
+    rest_days: List[int] = [5]
+    randomize_start: bool = True
+    
+class ScheduleConfigUpdate(BaseModel):
+    """تحديث إعدادات الجدولة"""
+    enabled: Optional[bool] = None
+    start_hour: Optional[int] = None
+    end_hour: Optional[int] = None
+    max_groups_per_session: Optional[int] = None
+    min_delay: Optional[int] = None
+    max_delay: Optional[int] = None
+    rest_days: Optional[List[int]] = None
+    randomize_start: Optional[bool] = None
+
 class BotConfigResponse(BotConfigBase):
     id: int
     updated_at: datetime

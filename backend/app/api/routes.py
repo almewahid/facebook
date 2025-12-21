@@ -175,6 +175,48 @@ def get_bot_status(db: Session = Depends(get_db)):
         last_activity=last_post.created_at if last_post else None
     )
 
+@router.post("/bot/logout")
+def logout_facebook(db: Session = Depends(get_db)):
+    """تسجيل الخروج من فيسبوك - حذف Chrome Profile"""
+    import shutil
+    import os
+    
+    # إيقاف البوت أولاً
+    if bot_scheduler and bot_scheduler.is_running:
+        raise HTTPException(
+            status_code=400, 
+            detail="يجب إيقاف البوت أولاً قبل تسجيل الخروج"
+        )
+    
+    # مسار Chrome Profile
+    profile_path = os.path.join(os.getcwd(), "chrome_profile")
+    
+    try:
+        if os.path.exists(profile_path):
+            shutil.rmtree(profile_path)
+            
+            # تسجيل في logs
+            log = models.BotLog(
+                level="info",
+                message="تم تسجيل الخروج من فيسبوك",
+                details="تم حذف Chrome Profile"
+            )
+            db.add(log)
+            db.commit()
+            
+            return {
+                "status": "success",
+                "message": "تم تسجيل الخروج بنجاح. عند تشغيل البوت مرة أخرى، سيطلب تسجيل الدخول."
+            }
+        else:
+            return {
+                "status": "info",
+                "message": "لا يوجد حساب مسجل الدخول"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطأ في تسجيل الخروج: {str(e)}")
+
+
 # ==================== Logs Endpoints ====================
 
 @router.get("/logs", response_model=List[schemas.BotLogResponse])

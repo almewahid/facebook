@@ -53,6 +53,11 @@ class FacebookBot:
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         
+        # إضافة خيارات إضافية لحل مشكلة Windows
+        options.add_argument('--disable-gpu')
+        options.add_argument('--remote-debugging-port=9222')
+        options.add_argument('--log-level=3')
+        
         prefs = {
             "profile.default_content_setting_values.notifications": 2,
             "credentials_enable_service": False,
@@ -61,15 +66,53 @@ class FacebookBot:
         options.add_experimental_option("prefs", prefs)
         
         try:
-            service = Service(ChromeDriverManager().install())
+            # محاولة 1: استخدام webdriver-manager مع cache
+            print("محاولة تثبيت ChromeDriver...")
+            # استخدام cache لتجنب التحديث المتكرر
+            driver_path = ChromeDriverManager(cache_valid_range=30).install()
+            service = Service(driver_path)
             driver = webdriver.Chrome(service=service, options=options)
             driver.maximize_window()
             driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             print("✓ تم تشغيل المتصفح بنجاح")
             return driver
+        except Exception as e1:
+            print(f"❌ الطريقة الأولى فشلت: {e1}")
+            
+            # محاولة 2: استخدام Chrome مباشرة بدون service
+            try:
+                print("محاولة استخدام Chrome مباشرة...")
+                driver = webdriver.Chrome(options=options)
+                driver.maximize_window()
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                print("✓ تم تشغيل المتصفح بنجاح (الطريقة البديلة)")
+                return driver
+            except Exception as e2:
+                print(f"❌ الطريقة الثانية فشلت: {e2}")
+                print("\n💡 الحلول المقترحة:")
+                print("1. تأكد من تثبيت Google Chrome")
+                print("2. شغل: pip install --upgrade selenium webdriver-manager")
+                print("3. احذف مجلد chrome_profile وحاول مرة أخرى")
+                raise Exception(f"فشل تشغيل Chrome. الخطأ الأصلي: {e1}")
+    
+    def get_post_content(self):
+        """الحصول على محتوى المنشور"""
+        try:
+            # التحقق من وجود محتوى مخصص
+            custom_content = self.db.query(models.BotConfig).filter(
+                models.BotConfig.key == "CUSTOM_POST_CONTENT"
+            ).first()
+            
+            if custom_content and custom_content.value and custom_content.value.strip():
+                print("📝 استخدام المحتوى المخصص")
+                return custom_content.value
+            
+            # محتوى افتراضي
+            print("📝 استخدام المحتوى الافتراضي")
+            return "مرحباً! هذا منشور من البوت الذكي 🤖"
         except Exception as e:
-            print(f"❌ خطأ في تشغيل المتصفح: {e}")
-            raise
+            print(f"⚠️ خطأ في الحصول على المحتوى: {e}")
+            return "مرحباً! منشور تجريبي 🤖"
     
     def check_if_blocked(self):
         """التحقق من وجود رسالة حظر"""
@@ -218,8 +261,21 @@ class FacebookBot:
             time.sleep(random.uniform(1, 2))
             post_button.click()
             
+            # انتظار اكتمال النشر
+            time.sleep(random.uniform(3, 5))
+            
+            # محاولة الحصول على رابط المنشور
+            post_url = None
+            try:
+                time.sleep(2)
+                post_url = self.driver.current_url
+                print(f"✅ تم الحصول على رابط المنشور: {post_url}")
+            except Exception as e:
+                print(f"⚠️ لم نستطع الحصول على رابط المنشور: {e}")
+                post_url = self.config.get('page_url')  # استخدام رابط الصفحة كبديل
+            
             duration = time.time() - start_time
-            return self.save_post_result(group_name, cycle_number, "success", None, self.config['page_url'], duration)
+            return self.save_post_result(group_name, cycle_number, "success", None, post_url, duration)
             
         except Exception as e:
             duration = time.time() - start_time

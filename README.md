@@ -1,475 +1,282 @@
-# 🤖 Facebook Auto Poster
+# 🤖 Facebook Auto Poster Bot
 
-<div align="center">
+> Intelligent automation tool for posting in Facebook groups with advanced scheduling and AI-powered content generation.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
-![Node](https://img.shields.io/badge/node-18+-green.svg)
-![Status](https://img.shields.io/badge/status-active-success.svg)
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.104-green)
+![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![License](https://img.shields.io/badge/License-MIT-yellow)
 
-**تطبيق ذكي متكامل للنشر التلقائي في مجموعات فيسبوك مع الذكاء الاصطناعي**
-
-[المميزات](#-المميزات) • [التثبيت](#-التثبيت) • [الاستخدام](#-الاستخدام) • [التوثيق](#-التوثيق) • [المساهمة](#-المساهمة)
-
-</div>
+**English** | [العربية](README.ar.md)
 
 ---
 
-## 📋 المحتويات
+## ✨ Features
 
-- [نظرة عامة](#-نظرة-عامة)
-- [المميزات](#-المميزات)
-- [التقنيات المستخدمة](#-التقنيات-المستخدمة)
-- [البنية المعمارية](#-البنية-المعمارية)
-- [التثبيت](#-التثبيت)
-- [الاستخدام](#-الاستخدام)
-- [الإعدادات](#-الإعدادات)
-- [API Documentation](#-api-documentation)
-- [النشر](#-النشر)
-- [المساهمة](#-المساهمة)
-- [الترخيص](#-الترخيص)
+### 🎯 Core Features
+- ✅ **Automated Group Posting** - Post to multiple Facebook groups automatically
+- ✅ **Smart Scheduling** - 4 scheduling presets (Conservative, Moderate, Intensive, Risky)
+- ✅ **Bulk Operations** - Add multiple groups at once
+- ✅ **Custom Content** - Use your own post content or AI-generated
+- ✅ **Real-time Dashboard** - Monitor posting activity live
+- ✅ **Advanced Analytics** - Track success rates, timing, and performance
 
----
+### 📊 Dashboard Features
+- Real-time posting statistics
+- Group management interface
+- Post history with clickable links
+- Success/failure tracking
+- Customizable scheduling
+- Rest days configuration
 
-## 🎯 نظرة عامة
-
-**Facebook Auto Poster** هو تطبيق متكامل يجمع بين قوة الأتمتة والذكاء الاصطناعي لإدارة النشر في مجموعات فيسبوك بشكل تلقائي وذكي.
-
-### ✨ لماذا هذا التطبيق؟
-
-- 🚀 **توفير الوقت**: نشر تلقائي في عشرات المجموعات بضغطة زر واحدة
-- 🤖 **ذكاء اصطناعي**: تحليل أفضل أوقات النشر وكتابة محتوى تلقائي
-- 📊 **تحليلات متقدمة**: تتبع الأداء وإحصائيات مفصلة
-- 🛡️ **حماية من الحظر**: سلوك بشري طبيعي وأوقات عشوائية
-- 🎨 **واجهة احترافية**: Dashboard جميل وسهل الاستخدام
+### 🛡️ Safety Features
+- Anti-detection measures
+- Randomized delays
+- Smart scheduling to avoid blocks
+- Session persistence
+- Error handling and recovery
 
 ---
 
-## 🌟 المميزات
-
-### 🔄 النشر الذكي
-- ✅ نشر تلقائي في مجموعات متعددة
-- ✅ جدولة منشورات حسب أوقات محددة
-- ✅ تنويع المحتوى تلقائياً
-- ✅ إعادة محاولة عند الفشل
-- ✅ تخطي المجموعات غير المتاحة
-
-### 🤖 الذكاء الاصطناعي
-- 🧠 تحليل أفضل أوقات النشر
-- ✍️ كتابة تعليقات ذكية
-- 📈 اقتراح استراتيجيات تحسين
-- 🔍 كشف أنماط الأخطاء
-- 🎯 اختيار ذكي للمجموعات
-
-### 🛡️ الحماية والأمان
-- 🕐 انتظار عشوائي بين المنشورات (60-120 ثانية)
-- 🎭 تصرف بشري طبيعي (كتابة تدريجية، تمرير)
-- 🚦 كشف تلقائي للحظر
-- 🔐 تشفير بيانات الدخول
-- 📸 حفظ screenshots عند الأخطاء
-
-### 📊 التحليلات والإحصائيات
-- 📈 رسوم بيانية حية
-- 📋 تقارير يومية/أسبوعية/شهرية
-- 🎯 معدلات النجاح لكل مجموعة
-- ⏱️ متوسط الوقت للمنشور
-- 📊 إحصائيات متقدمة
-
-### 🎨 واجهة المستخدم
-- 💻 Dashboard احترافي
-- 🎛️ إدارة المجموعات
-- 📅 جدولة المنشورات
-- ⚙️ إعدادات متقدمة
-- 🔔 إشعارات فورية
-
----
-
-## 🛠️ التقنيات المستخدمة
+## 🏗️ Tech Stack
 
 ### Backend
-- **Python 3.9+** - اللغة الأساسية
-- **FastAPI** - Framework للـ API
-- **SQLAlchemy** - ORM لقاعدة البيانات
-- **SQLite** - قاعدة البيانات
-- **Selenium** - أتمتة المتصفح
-- **Anthropic Claude API** - الذكاء الاصطناعي
-- **Celery** - جدولة المهام
-- **Redis** - Caching
+- **FastAPI** - Modern Python web framework
+- **SQLAlchemy** - Database ORM
+- **Alembic** - Database migrations
+- **Selenium** - Browser automation
+- **SQLite** - Lightweight database
 
 ### Frontend
-- **Next.js 14** - React Framework
-- **TypeScript** - Type Safety
+- **Next.js 14** - React framework
 - **Tailwind CSS** - Styling
-- **Shadcn/ui** - Component Library
-- **Recharts** - Data Visualization
-- **React Query** - Data Fetching
-
-### DevOps
-- **Docker** - Containerization
-- **Docker Compose** - Multi-container
-- **GitHub Actions** - CI/CD
-- **Nginx** - Reverse Proxy
+- **Recharts** - Data visualization
+- **Lucide Icons** - UI icons
 
 ---
 
-## 🏗️ البنية المعمارية
+## 📦 Installation
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- Google Chrome browser
+
+### Backend Setup
+
+```bash
+# Clone repository
+git clone https://github.com/almewahid/facebook.git
+cd facebook
+
+# Setup Python virtual environment
+cd backend
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run database migrations
+alembic upgrade head
+
+# Start backend server
+uvicorn app.main:app --reload
+```
+
+Backend will run on: `http://localhost:8000`
+
+### Frontend Setup
+
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+Frontend will run on: `http://localhost:3000`
+
+---
+
+## 🚀 Usage
+
+### 1. Add Facebook Groups
+- Click "إضافة مجموعة" to add single group
+- Or use "إضافة متعددة" for bulk adding
+
+### 2. Configure Settings
+- Set delays between posts
+- Add custom post content (optional)
+- Configure smart scheduling
+
+### 3. Start Bot
+- Click "تشغيل البوت"
+- Monitor real-time progress
+- View analytics and reports
+
+---
+
+## 📸 Screenshots
+
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Group Management
+![Groups](docs/screenshots/groups.png)
+
+### Analytics
+![Analytics](docs/screenshots/analytics.png)
+
+---
+
+## ⚙️ Configuration
+
+### Schedule Presets
+
+| Preset | Groups/Session | Delay | Rest Days | Risk Level |
+|--------|---------------|-------|-----------|------------|
+| **Conservative** | 3-5 | 120-180s | Weekend | Low |
+| **Moderate** | 5-7 | 90-150s | Friday | Medium |
+| **Intensive** | 7-10 | 60-120s | None | High |
+| **Risky** | 10-15 | 30-90s | None | Very High |
+
+---
+
+## 🛠️ API Documentation
+
+Backend API documentation available at: `http://localhost:8000/docs`
+
+### Main Endpoints
+
+- `GET /api/v1/stats` - Get posting statistics
+- `GET /api/v1/groups` - List all groups
+- `POST /api/v1/groups` - Add new group
+- `GET /api/v1/posts` - Get post history
+- `POST /api/v1/bot/start` - Start bot
+- `POST /api/v1/bot/stop` - Stop bot
+- `GET /api/v1/schedule` - Get schedule config
+- `PUT /api/v1/schedule` - Update schedule
+
+---
+
+## 📁 Project Structure
 
 ```
 facebook-auto-poster/
-│
-├── 📂 backend/                 # Backend API (Python/FastAPI)
+├── backend/
 │   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py            # FastAPI application
-│   │   ├── database.py        # Database configuration
-│   │   ├── models.py          # SQLAlchemy models
-│   │   ├── schemas.py         # Pydantic schemas
-│   │   │
-│   │   ├── api/               # API routes
-│   │   │   ├── routes.py
-│   │   │   └── auth.py
-│   │   │
-│   │   ├── bot/               # Selenium bot
-│   │   │   ├── selenium_bot.py
-│   │   │   ├── scheduler.py
-│   │   │   └── ai_engine.py
-│   │   │
-│   │   └── utils/             # Utilities
-│   │       ├── notifications.py
-│   │       └── reports.py
-│   │
+│   │   ├── api/
+│   │   │   └── routes.py
+│   │   ├── bot/
+│   │   │   └── selenium_bot.py
+│   │   ├── database.py
+│   │   ├── models.py
+│   │   ├── schemas.py
+│   │   └── main.py
+│   ├── alembic/
 │   ├── requirements.txt
-│   └── Dockerfile
-│
-├── 📂 frontend/                # Frontend (Next.js)
+│   └── facebook_bot.db
+├── frontend/
 │   ├── app/
-│   │   ├── page.tsx           # Homepage
-│   │   ├── dashboard/
-│   │   ├── groups/
-│   │   ├── schedule/
-│   │   └── settings/
-│   │
-│   ├── components/            # React components
-│   ├── lib/                   # Utilities
+│   │   ├── page.jsx
+│   │   └── layout.jsx
 │   ├── package.json
-│   └── Dockerfile
-│
-├── 📂 docs/                    # Documentation
-│   ├── INSTALLATION.md
-│   ├── API.md
-│   ├── DEPLOYMENT.md
-│   └── screenshots/
-│
-├── docker-compose.yml
+│   └── tailwind.config.js
 ├── .gitignore
-├── LICENSE
 └── README.md
 ```
 
 ---
 
-## 💻 التثبيت
+## 🔐 Security Notes
 
-### المتطلبات
+### Important: Before Using
+1. **Never share** your Facebook credentials
+2. **Use at your own risk** - Automated posting may violate Facebook TOS
+3. **Keep chrome_profile/** private (contains session data)
+4. **Don't commit** `.db` files or `.env` files
 
-- Python 3.9+
-- Node.js 18+
-- Docker & Docker Compose (اختياري)
-- Google Chrome Browser
-- حساب Anthropic Claude API (للذكاء الاصطناعي)
-
-### طريقة 1: التثبيت اليدوي
-
-#### 1. استنساخ المشروع
-
-```bash
-git clone https://github.com/almewahid/facebook.git
-cd facebook
-```
-
-#### 2. تثبيت Backend
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # في Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-#### 3. تثبيت Frontend
-
-```bash
-cd ../frontend
-npm install
-```
-
-#### 4. إعداد المتغيرات البيئية
-
-إنشاء ملف `.env` في مجلد `backend`:
-
-```env
-# Database
-DATABASE_URL=sqlite:///./facebook_bot.db
-
-# Anthropic API
-ANTHROPIC_API_KEY=your_api_key_here
-
-# Facebook Credentials (اختياري)
-FACEBOOK_EMAIL=your_email@example.com
-FACEBOOK_PASSWORD=your_password
-
-# Bot Settings
-PAGE_URL=https://web.facebook.com/profile.php?id=YOUR_PAGE_ID
-DELAY_BETWEEN_CYCLES=3600
-MIN_DELAY_BETWEEN_GROUPS=60
-MAX_DELAY_BETWEEN_GROUPS=120
-
-# Security
-SECRET_KEY=your_secret_key_here
-```
-
-#### 5. تشغيل التطبيق
-
-**Backend:**
-```bash
-cd backend
-uvicorn app.main:app --reload --port 8000
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm run dev
-```
-
-الآن افتح: `http://localhost:3000`
+### Recommended Usage
+- Use conservative scheduling
+- Don't post too frequently
+- Monitor for blocks/warnings
+- Keep session data secure
 
 ---
 
-### طريقة 2: Docker (الأسهل) 🐳
+## 🐛 Troubleshooting
 
+### ChromeDriver Issues
 ```bash
-# استنساخ المشروع
-git clone https://github.com/almewahid/facebook.git
-cd facebook
+# Update ChromeDriver
+pip install --upgrade webdriver-manager
+```
 
-# إنشاء ملف .env
-cp .env.example .env
-# عدّل الملف بمعلوماتك
+### Database Issues
+```bash
+# Reset database (WARNING: deletes all data)
+rm facebook_bot.db
+alembic upgrade head
+```
 
-# تشغيل كل شيء
-docker-compose up -d
+### Port Already in Use
+```bash
+# Backend (8000)
+lsof -ti:8000 | xargs kill -9
 
-# الوصول للتطبيق
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
+# Frontend (3000)
+lsof -ti:3000 | xargs kill -9
 ```
 
 ---
 
-## 🚀 الاستخدام
+## 🤝 Contributing
 
-### 1. الإعدادات الأولية
-
-1. افتح `http://localhost:3000`
-2. اذهب إلى **Settings**
-3. أدخل معلومات فيسبوك
-4. أضف المجموعات التي تريد النشر فيها
-
-### 2. إضافة مجموعات
-
-```bash
-# عبر API
-curl -X POST http://localhost:8000/api/v1/groups \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "مصريون بالكويت",
-    "is_active": true
-  }'
-```
-
-أو عبر Dashboard → Groups → Add Group
-
-### 3. بدء النشر التلقائي
-
-```bash
-# عبر API
-curl -X POST http://localhost:8000/api/v1/bot/start
-
-# أو من Dashboard
-Dashboard → Click "Start Bot"
-```
-
-### 4. جدولة منشورات
-
-Dashboard → Schedule → New Schedule
+Contributions are welcome! Please:
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open Pull Request
 
 ---
 
-## ⚙️ الإعدادات
+## 📝 License
 
-### إعدادات البوت
-
-```python
-# في backend/.env
-
-# عدد المجموعات في كل دورة
-MAX_GROUPS_PER_SESSION=7
-
-# الوقت بين كل دورة (بالثواني)
-DELAY_BETWEEN_CYCLES=3600  # ساعة واحدة
-
-# الوقت بين المجموعات (ثواني)
-MIN_DELAY_BETWEEN_GROUPS=60
-MAX_DELAY_BETWEEN_GROUPS=120
-
-# عدد المحاولات
-MAX_AUTO_SHARE_TRIES=3
-```
-
-### إعدادات الذكاء الاصطناعي
-
-```python
-# Anthropic Claude API
-ANTHROPIC_API_KEY=sk-ant-xxx
-CLAUDE_MODEL=claude-3-sonnet-20240229
-
-# تفعيل الميزات
-AI_BEST_TIME_ANALYSIS=true
-AI_CONTENT_GENERATION=true
-AI_ERROR_DETECTION=true
-```
+This project is licensed under the MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
-## 📚 API Documentation
+## ⚠️ Disclaimer
 
-### الوصول للتوثيق
-
-**Swagger UI:** `http://localhost:8000/docs`
-**ReDoc:** `http://localhost:8000/redoc`
-
-### أمثلة API
-
-#### الحصول على إحصائيات
-
-```bash
-GET /api/v1/stats
-```
-
-```json
-{
-  "total_posts": 150,
-  "successful_posts": 142,
-  "failed_posts": 8,
-  "success_rate": 94.67,
-  "total_groups": 7,
-  "active_groups": 7,
-  "last_cycle": "2024-12-19T10:30:00Z"
-}
-```
-
-#### بدء البوت
-
-```bash
-POST /api/v1/bot/start
-```
-
-#### إيقاف البوت
-
-```bash
-POST /api/v1/bot/stop
-```
-
-للمزيد: [API Documentation](docs/API.md)
+This tool is for educational purposes only. Automated posting may violate Facebook's Terms of Service. Use responsibly and at your own risk. The developers are not responsible for any account bans or restrictions.
 
 ---
 
-## 🚢 النشر
+## 📧 Contact
 
-### النشر على Base44
-
-[دليل النشر الكامل](docs/DEPLOYMENT.md)
-
-```bash
-# تسجيل الدخول
-base44 login
-
-# إنشاء تطبيق جديد
-base44 create facebook-auto-poster
-
-# نشر
-base44 deploy
-```
-
-### النشر على Railway
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template)
-
-### النشر على Heroku
-
-```bash
-heroku create facebook-auto-poster
-git push heroku main
-```
-
----
-
-## 🤝 المساهمة
-
-نرحب بأي مساهمات! 🎉
-
-### كيفية المساهمة
-
-1. Fork المشروع
-2. إنشاء branch جديد (`git checkout -b feature/amazing-feature`)
-3. Commit التغييرات (`git commit -m 'Add amazing feature'`)
-4. Push للـ branch (`git push origin feature/amazing-feature`)
-5. فتح Pull Request
-
-### Guidelines
-
-- اتبع PEP 8 للكود Python
-- اكتب tests للميزات الجديدة
-- حدّث الـ documentation
-- استخدم commit messages واضحة
-
----
-
-## 📝 الترخيص
-
-هذا المشروع مرخص تحت **MIT License** - انظر ملف [LICENSE](LICENSE) للتفاصيل.
-
----
-
-## 👨‍💻 المطور
-
-**almewahid**
 - GitHub: [@almewahid](https://github.com/almewahid)
 - Project Link: [https://github.com/almewahid/facebook](https://github.com/almewahid/facebook)
 
 ---
 
-## 🙏 شكر وتقدير
+## 🙏 Acknowledgments
 
-- [Anthropic](https://www.anthropic.com/) - Claude API
-- [Selenium](https://www.selenium.dev/) - Web Automation
-- [FastAPI](https://fastapi.tiangolo.com/) - Web Framework
-- [Next.js](https://nextjs.org/) - React Framework
-
----
-
-## ⚠️ إخلاء المسؤولية
-
-هذا التطبيق للأغراض التعليمية والاستخدام الشخصي فقط. يرجى الالتزام بشروط استخدام فيسبوك وعدم إساءة الاستخدام. المطور غير مسؤول عن أي حظر أو مشاكل قد تحدث نتيجة الاستخدام.
+- FastAPI documentation
+- Next.js team
+- Selenium contributors
+- Open source community
 
 ---
 
-<div align="center">
-
-**صنع بـ ❤️ في مصر**
-
-⭐ إذا أعجبك المشروع، لا تنسى تعطيه Star!
-
-</div>
+**Made with ❤️ by Osama**
