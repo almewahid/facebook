@@ -31,7 +31,7 @@ class Post(Base):
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
     content = Column(Text, nullable=False)
     image_path = Column(String, nullable=True)
-    status = Column(String, default="pending")  # ✅ pending, success, failed, skipped
+    status = Column(String, default="pending")  # pending, posted, failed
     post_url = Column(String, nullable=True)
     scheduled_time = Column(DateTime(timezone=True), nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
@@ -69,17 +69,3 @@ class Schedule(Base):
     
     def __repr__(self):
         return f"<Schedule(name='{self.name}', type='{self.schedule_type}')>"
-
-
-class BotLog(Base):
-    """سجل أحداث البوت"""
-    __tablename__ = "bot_logs"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    level = Column(String, nullable=False)  # info, warning, error
-    message = Column(Text, nullable=False)
-    details = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    def __repr__(self):
-        return f"<BotLog(level='{self.level}', message='{self.message[:50]}...')>"

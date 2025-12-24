@@ -187,7 +187,8 @@ class FacebookBot:
         except:
             return False
     
-    def search_and_open_group(self, group_name: str):
+    def 216
+    (self, group_name: str):
         """البحث عن مجموعة وفتحها"""
         wait = WebDriverWait(self.driver, 20)
         
@@ -248,40 +249,40 @@ class FacebookBot:
             if not self.select_share_to_group():
                 return self.save_post_result(group_name, cycle_number, "failed", "لم أستطع اختيار خيار المجموعة", None, time.time() - start_time)
             
-            if not self.search_and_open_group(group_name):
+            if not self.265
+            (group_name):
                 return self.save_post_result(group_name, cycle_number, "skipped", "المجموعة غير موجودة", None, time.time() - start_time)
             
-            # الحصول على محتوى المنشور
-            post_content = self.get_post_content()
-            
-            # البحث عن صندوق الكتابة والكتابة إليه
-            try:
-                # الانتظار قليلاً حتى يتم تحميل الصفحة
-                time.sleep(random.uniform(1, 2))
-                
-                # البحث عن صندوق النص (contenteditable div)
-                text_box = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((
-                        By.XPATH,
-                        "//div[@contenteditable='true']"
-                    ))
-                )
-                
-                # النقر على الصندوق
-                self.driver.execute_script("arguments[0].click();", text_box)
-                time.sleep(random.uniform(0.5, 1))
-                
-                # كتابة المحتوى بشكل تدريجي
-                for char in post_content:
-                    text_box.send_keys(char)
-                    time.sleep(random.uniform(0.02, 0.08))
-                
-                print(f"✅ تم كتابة محتوى المنشور")
-            except Exception as e:
-                print(f"⚠️ خطأ في كتابة المحتوى: {e}")
-                # المتابعة على أي حال
-            
             # زر النشر
+                        # الحصول على محتوى المنشور
+                        post_content = self.get_post_content()
+                            
+            # البحث عن صندوق الكتابة والكتابة إليه
+                        try:
+                                            # الانتظار قليلاً حتى يتم تحميل الصفحة
+                                            time.sleep(random.uniform(1, 2))
+                                            
+                # البحث عن صندوق النص (contenteditable div)
+                            text_box = WebDriverWait(self.driver, 10).until(
+                                                EC.presence_of_element_located((
+                                                                            By.XPATH,
+"//div[@contenteditable='true']"
+                                                                        ))
+                                            )
+                            
+                # النقر على الصندوق
+                            self.driver.execute_script("arguments[0].click();", text_box)
+                            time.sleep(random.uniform(0.5, 1))
+                            
+                # كتابة المحتوى بشكل تدريجي
+                            for char in post_content:
+                                                    text_box.send_keys(char)
+                                                    time.sleep(random.uniform(0.02, 0.08))
+                                                
+                print(f"✅ تم كتابة محتوى المنشور")
+                        except Exception as e:
+                                            print(f"⚠️ خطأ في كتابة المحتوى: {e}")
+                                            # المتابعة على أي حال
             post_button = WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable((
                     By.XPATH,

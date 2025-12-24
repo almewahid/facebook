@@ -11,6 +11,7 @@ import time
 import random
 from datetime import datetime
 import os
+import logging
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -24,6 +25,8 @@ from selenium.common.exceptions import (
 
 from app.database import SessionLocal
 from app import models
+
+logger = logging.getLogger(__name__)
 
 
 class FacebookBot:
@@ -77,7 +80,7 @@ class FacebookBot:
             print("✓ تم تشغيل المتصفح بنجاح")
             return driver
         except Exception as e1:
-            print(f"❌ الطريقة الأولى فشلت: {e1}")
+            print(f"✗ الطريقة الأولى فشلت: {e1}")
             
             # محاولة 2: استخدام Chrome مباشرة بدون service
             try:
@@ -88,7 +91,7 @@ class FacebookBot:
                 print("✓ تم تشغيل المتصفح بنجاح (الطريقة البديلة)")
                 return driver
             except Exception as e2:
-                print(f"❌ الطريقة الثانية فشلت: {e2}")
+                print(f"✗ الطريقة الثانية فشلت: {e2}")
                 print("\n💡 الحلول المقترحة:")
                 print("1. تأكد من تثبيت Google Chrome")
                 print("2. شغل: pip install --upgrade selenium webdriver-manager")
@@ -187,99 +190,322 @@ class FacebookBot:
         except:
             return False
     
+    def search_group_by_name(self, group_name: str) -> str:
+        """
+        البحث عن مجموعة بالاسم والحصول على رابطها
+        
+        Args:
+            group_name: اسم المجموعة
+            
+        Returns:
+            str: رابط المجموعة أو None
+        """
+        try:
+            logger.info(f"🔍 البحث عن مجموعة: {group_name}")
+            
+            # اذهب لصفحة المجموعات
+            self.driver.get("https://www.facebook.com/groups/feed/")
+            time.sleep(3)
+            
+            # ابحث عن صندوق البحث
+            search_box = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((
+                    By.CSS_SELECTOR,
+                    "input[type='search'], input[placeholder*='بحث']"
+                ))
+            )
+            
+            # اكتب اسم المجموعة
+            search_box.clear()
+            search_box.send_keys(group_name)
+            time.sleep(2)
+            
+            # ابحث عن النتائج
+            try:
+                # ابحث عن أول نتيجة مطابقة
+                group_link = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((
+                        By.XPATH,
+                        f"//a[contains(@href, '/groups/') and .//span[contains(text(), '{group_name}')]]"
+                    ))
+                )
+                
+                group_url = group_link.get_attribute('href')
+                logger.info(f"✅ تم العثور على المجموعة: {group_url}")
+                
+                return group_url
+                
+            except TimeoutException:
+                logger.warning(f"⚠️ لم يتم العثور على المجموعة: {group_name}")
+                
+                # حاول بطريقة أخرى - من قائمة مجموعاتك
+                return self._search_in_my_groups(group_name)
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في البحث عن المجموعة: {e}")
+            return None
+    
+    def _search_in_my_groups(self, group_name: str) -> str:
+        """البحث في قائمة مجموعاتك الشخصية"""
+        try:
+            logger.info("🔍 البحث في مجموعاتي...")
+            
+            # اذهب لصفحة مجموعاتي
+            self.driver.get("https://www.facebook.com/groups/")
+            time.sleep(3)
+            
+            # ابحث عن المجموعة في القائمة
+            groups = self.driver.find_elements(
+                By.XPATH,
+                "//a[contains(@href, '/groups/')]"
+            )
+            
+            for group in groups:
+                try:
+                    group_text = group.text
+                    if group_name.lower() in group_text.lower():
+                        group_url = group.get_attribute('href')
+                        logger.info(f"✅ تم العثور في مجموعاتي: {group_url}")
+                        return group_url
+                except:
+                    continue
+            
+            logger.warning(f"⚠️ المجموعة غير موجودة في قائمتي: {group_name}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في البحث في مجموعاتي: {e}")
+            return None
     def search_and_open_group(self, group_name: str):
-        """البحث عن مجموعة وفتحها"""
+        """البحث عن مجموعة وفتحها في نافذة المشاركة"""
         wait = WebDriverWait(self.driver, 20)
         
         try:
+            print(f"🔍 البحث عن المجموعة: {group_name}")
+            
+            # ✅ انتظار نافذة المشاركة
             dialog = wait.until(
                 EC.presence_of_element_located((
                     By.XPATH,
-                    "//div[@role='dialog' and .//span[contains(text(),'مشاركة في مجموعة')]]"
+                    "//div[@role='dialog']"
                 ))
             )
+            print("✅ تم العثور على نافذة المشاركة")
             
-            search_input = dialog.find_element(
-                By.XPATH,
-                ".//input[@type='search' and @placeholder='بحث عن مجموعات']"
-            )
+            time.sleep(1)
             
-            search_input.click()
-            time.sleep(random.uniform(0.3, 0.7))
-            search_input.clear()
+            # ✅ البحث عن حقل البحث بطرق متعددة
+            search_input = None
+            search_xpaths = [
+                ".//input[@type='search']",
+                ".//input[@placeholder='بحث عن مجموعات']",
+                ".//input[contains(@placeholder, 'بحث')]",
+                ".//input[@aria-label='بحث عن مجموعات']",
+                ".//input[contains(@aria-label, 'بحث')]",
+                "//input[@type='search']",
+                "//label[contains(., 'بحث')]/following-sibling::input",
+                "//div[@role='dialog']//input"
+            ]
             
-            # كتابة تدريجية
-            for char in group_name:
-                search_input.send_keys(char)
-                time.sleep(random.uniform(0.05, 0.15))
+            for xpath in search_xpaths:
+                try:
+                    search_input = dialog.find_element(By.XPATH, xpath)
+                    if search_input:
+                        print(f"✅ تم العثور على حقل البحث: {xpath}")
+                        break
+                except:
+                    continue
             
-            time.sleep(random.uniform(2, 3))
+            if not search_input:
+                print("❌ لم يتم العثور على حقل البحث!")
+                # طباعة HTML للتشخيص
+                print("HTML of dialog:")
+                print(dialog.get_attribute('innerHTML')[:500])
+                return False
             
-            group_result = wait.until(
-                EC.element_to_be_clickable((
-                    By.XPATH,
-                    f".//span[normalize-space()='{group_name}']/ancestor::div[@role='button']"
-                ))
-            )
+            # ✅ تنظيف وتفعيل الحقل
+            try:
+                search_input.click()
+                time.sleep(0.5)
+            except:
+                pass
+            
+            try:
+                search_input.clear()
+                time.sleep(0.3)
+            except:
+                pass
+            
+            # ✅ كتابة اسم المجموعة بطريقة طبيعية
+            print(f"✍️ كتابة: {group_name}")
+            
+            # جرب طريقة مباشرة أولاً
+            try:
+                search_input.send_keys(group_name)
+                print("✅ تم الكتابة بالطريقة المباشرة")
+            except:
+                # إذا فشلت، جرب الكتابة التدريجية
+                print("⚠️ الكتابة المباشرة فشلت، أحاول التدريجية...")
+                for char in group_name:
+                    try:
+                        search_input.send_keys(char)
+                        time.sleep(random.uniform(0.05, 0.15))
+                    except:
+                        pass
+            
+            # ✅ انتظار ظهور النتائج
+            print("⏳ انتظار النتائج...")
+            time.sleep(random.uniform(2, 4))
+            
+            # ✅ البحث عن المجموعة في النتائج بطرق متعددة
+            group_result = None
+            result_xpaths = [
+                f".//span[normalize-space()='{group_name}']/ancestor::div[@role='button']",
+                f".//span[contains(text(), '{group_name}')]/ancestor::div[@role='button']",
+                f".//div[@role='button' and .//span[contains(text(), '{group_name}')]]",
+                f"//div[@role='dialog']//div[@role='button'][.//span[contains(text(), '{group_name}')]]"
+            ]
+            
+            for xpath in result_xpaths:
+                try:
+                    group_result = wait.until(
+                        EC.element_to_be_clickable((By.XPATH, xpath))
+                    )
+                    if group_result:
+                        print(f"✅ تم العثور على المجموعة في النتائج: {xpath}")
+                        break
+                except TimeoutException:
+                    continue
+            
+            if not group_result:
+                print(f"❌ لم يتم العثور على المجموعة في النتائج: {group_name}")
+                # طباعة النتائج المتاحة للتشخيص
+                try:
+                    results = dialog.find_elements(By.XPATH, ".//div[@role='button']")
+                    print(f"📋 عدد النتائج المتاحة: {len(results)}")
+                    for i, result in enumerate(results[:5], 1):
+                        print(f"  {i}. {result.text[:50]}")
+                except:
+                    pass
+                return False
+            
+            # ✅ اضغط على المجموعة بطريقة أفضل
             time.sleep(random.uniform(0.5, 1))
-            group_result.click()
+            
+            # جرب الضغط بـ JavaScript إذا فشل الضغط العادي
+            try:
+                group_result.click()
+                print(f"✅ تم اختيار المجموعة: {group_name}")
+            except Exception as e:
+                print(f"⚠️ الضغط العادي فشل، أحاول JavaScript...")
+                try:
+                    self.driver.execute_script("arguments[0].click();", group_result)
+                    print(f"✅ تم اختيار المجموعة بـ JavaScript: {group_name}")
+                except Exception as e2:
+                    print(f"❌ فشل الضغط نهائياً: {e2}")
+                    return False
+            
             time.sleep(random.uniform(2, 4))
             return True
-        except TimeoutException:
+            
+        except TimeoutException as e:
+            print(f"❌ timeout في search_and_open_group: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ خطأ في search_and_open_group: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
-    def post_to_group(self, group_name: str, cycle_number: int):
-        """النشر في مجموعة واحدة"""
+    def post_to_group(self, group_identifier: str, cycle_number: int):
+        """
+        النشر في مجموعة واحدة
+        
+        Args:
+            group_identifier: رابط المجموعة أو اسمها
+            cycle_number: رقم الدورة
+            
+        Returns:
+            bool: نجاح العملية
+        """
         start_time = time.time()
         
         try:
+            # ✅ تحقق: هل هو رابط أم اسم؟
+            if group_identifier.startswith('http'):
+                # رابط مباشر
+                group_url = group_identifier
+                # ✅ استخرج الاسم/ID من URL بشكل صحيح
+                if '/groups/' in group_identifier:
+                    # مثال: https://web.facebook.com/groups/848010554766731/
+                    parts = group_identifier.rstrip('/').split('/')
+                    group_name = parts[-1]  # آخر جزء هو ID المجموعة
+                else:
+                    group_name = group_identifier.split('/')[-1]
+                
+                print(f"📍 استخدام رابط مباشر: {group_url}")
+                print(f"📝 اسم/ID المجموعة: {group_name}")
+            else:
+                # اسم المجموعة - ابحث عنها
+                group_name = group_identifier
+                print(f"📝 استخدام اسم المجموعة: {group_name}")
+                group_url = self.search_group_by_name(group_name)
+                
+                if not group_url:
+                    return self.save_post_result(
+                        group_name, 
+                        cycle_number, 
+                        "failed", 
+                        f"لم يتم العثور على المجموعة: {group_name}", 
+                        None, 
+                        time.time() - start_time
+                    )
+            
             # فتح الصفحة
             self.driver.get(self.config['page_url'])
             time.sleep(random.uniform(6, 10))
             
             if self.check_if_blocked():
-                return self.save_post_result(group_name, cycle_number, "failed", "تم اكتشاف حظر", None, time.time() - start_time)
+                return self.save_post_result(
+                    group_name, 
+                    cycle_number, 
+                    "failed", 
+                    "تم اكتشاف حظر", 
+                    None, 
+                    time.time() - start_time
+                )
             
             self.scroll_to_posts()
             
             if not self.open_share_box_for_first_post():
-                return self.save_post_result(group_name, cycle_number, "failed", "لم أستطع فتح زر المشاركة", None, time.time() - start_time)
+                return self.save_post_result(
+                    group_name, 
+                    cycle_number, 
+                    "failed", 
+                    "لم أستطع فتح زر المشاركة", 
+                    None, 
+                    time.time() - start_time
+                )
             
             if not self.select_share_to_group():
-                return self.save_post_result(group_name, cycle_number, "failed", "لم أستطع اختيار خيار المجموعة", None, time.time() - start_time)
+                return self.save_post_result(
+                    group_name, 
+                    cycle_number, 
+                    "failed", 
+                    "لم أستطع اختيار خيار المجموعة", 
+                    None, 
+                    time.time() - start_time
+                )
             
             if not self.search_and_open_group(group_name):
-                return self.save_post_result(group_name, cycle_number, "skipped", "المجموعة غير موجودة", None, time.time() - start_time)
-            
-            # الحصول على محتوى المنشور
-            post_content = self.get_post_content()
-            
-            # البحث عن صندوق الكتابة والكتابة إليه
-            try:
-                # الانتظار قليلاً حتى يتم تحميل الصفحة
-                time.sleep(random.uniform(1, 2))
-                
-                # البحث عن صندوق النص (contenteditable div)
-                text_box = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((
-                        By.XPATH,
-                        "//div[@contenteditable='true']"
-                    ))
+                return self.save_post_result(
+                    group_name, 
+                    cycle_number, 
+                    "skipped", 
+                    "المجموعة غير موجودة", 
+                    None, 
+                    time.time() - start_time
                 )
-                
-                # النقر على الصندوق
-                self.driver.execute_script("arguments[0].click();", text_box)
-                time.sleep(random.uniform(0.5, 1))
-                
-                # كتابة المحتوى بشكل تدريجي
-                for char in post_content:
-                    text_box.send_keys(char)
-                    time.sleep(random.uniform(0.02, 0.08))
-                
-                print(f"✅ تم كتابة محتوى المنشور")
-            except Exception as e:
-                print(f"⚠️ خطأ في كتابة المحتوى: {e}")
-                # المتابعة على أي حال
             
             # زر النشر
             post_button = WebDriverWait(self.driver, 10).until(
@@ -302,19 +528,21 @@ class FacebookBot:
                 print(f"✅ تم الحصول على رابط المنشور: {post_url}")
             except Exception as e:
                 print(f"⚠️ لم نستطع الحصول على رابط المنشور: {e}")
-                post_url = self.config.get('page_url')  # استخدام رابط الصفحة كبديل
+                post_url = group_url  # استخدام رابط المجموعة كبديل
             
             duration = time.time() - start_time
             return self.save_post_result(group_name, cycle_number, "success", None, post_url, duration)
             
         except Exception as e:
             duration = time.time() - start_time
-            return self.save_post_result(group_name, cycle_number, "failed", str(e), None, duration)
+            # استخدم group_name إذا كان متاحاً
+            name = group_name if 'group_name' in locals() else group_identifier
+            return self.save_post_result(name, cycle_number, "failed", str(e), None, duration)
     
     def save_post_result(self, group_name: str, cycle_number: int, status: str, error: str, url: str, duration: float):
         """حفظ نتيجة المنشور في قاعدة البيانات"""
         try:
-            group = self.db.query(models.FacebookGroup).filter(models.FacebookGroup.name == group_name).first()
+            group = self.db.query(models.Group).filter(models.Group.name == group_name).first()
             
             if group:
                 post = models.Post(
@@ -364,7 +592,7 @@ class FacebookBot:
         self.log_event("info", f"بدء الدورة رقم {self.cycle_counter}")
         
         # جلب المجموعات النشطة
-        groups = self.db.query(models.FacebookGroup).filter(models.FacebookGroup.is_active == True).all()
+        groups = self.db.query(models.Group).filter(models.Group.is_active == True).all()
         
         if not groups:
             print("⚠️ لا توجد مجموعات نشطة")
@@ -379,7 +607,9 @@ class FacebookBot:
         for i, group in enumerate(groups[:max_groups], 1):
             print(f"\n[{i}/{min(len(groups), max_groups)}] النشر في: {group.name}")
             
-            result = self.post_to_group(group.name, self.cycle_counter)
+            # ✅ استخدم URL إذا كان موجوداً، وإلا استخدم الاسم
+            group_identifier = group.url if group.url else group.name
+            result = self.post_to_group(group_identifier, self.cycle_counter)
             
             if result:
                 # جلب آخر منشور لمعرفة الحالة
@@ -390,7 +620,7 @@ class FacebookBot:
                         print(f"✅ نجح")
                     elif last_post.status == "skipped":
                         skipped += 1
-                        print(f"⏭️ تم التخطي")
+                        print(f"⭕ تم التخطي")
                     else:
                         failed += 1
                         print(f"❌ فشل")
@@ -406,7 +636,7 @@ class FacebookBot:
         
         print(f"\n{'='*70}")
         print(f"✅ انتهت الدورة رقم {self.cycle_counter}")
-        print(f"📊 النتائج: ✅ {successful} | ❌ {failed} | ⏭️ {skipped}")
+        print(f"📊 النتائج: ✅ {successful} | ❌ {failed} | ⭕ {skipped}")
         print(f"{'='*70}\n")
         
         self.log_event("info", f"انتهت الدورة {self.cycle_counter}", f"نجح: {successful}, فشل: {failed}, تخطي: {skipped}")

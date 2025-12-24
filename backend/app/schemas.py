@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional, List
 
@@ -9,18 +9,74 @@ class GroupBase(BaseModel):
     is_active: bool = True
 
 class GroupCreate(GroupBase):
-    pass
+    """Schema لإنشاء مجموعة جديدة"""
+    url: Optional[str] = None  # ✅ إضافة URL اختياري
+    
+    @field_validator('name')
+    def validate_name(cls, v):
+        if not v or len(v.strip()) < 2:
+            raise ValueError('اسم المجموعة يجب أن يكون حرفين على الأقل')
+        return v.strip()
+    
+    @field_validator('url')
+    def validate_url(cls, v):
+        # ✅ URL اختياري
+        if v is None:
+            return None
+        
+        v = v.strip()
+        if not v:
+            return None
+            
+        # تحقق من صيغة Facebook
+        if 'facebook.com/groups/' not in v and 'fb.com/groups/' not in v:
+            raise ValueError('الرابط يجب أن يكون لمجموعة Facebook')
+        
+        return v
 
 class GroupUpdate(BaseModel):
+    """Schema لتحديث مجموعة"""
     name: Optional[str] = None
+    url: Optional[str] = None  # ✅ إضافة URL
     is_active: Optional[bool] = None
+    
+    @field_validator('name')
+    def validate_name(cls, v):
+        if v is not None and len(v.strip()) < 2:
+            raise ValueError('اسم المجموعة يجب أن يكون حرفين على الأقل')
+        return v.strip() if v else None
+    
+    @field_validator('url')
+    def validate_url(cls, v):
+        if v is None or not v.strip():
+            return None
+            
+        if 'facebook.com/groups/' not in v and 'fb.com/groups/' not in v:
+            raise ValueError('الرابط يجب أن يكون لمجموعة Facebook')
+        
+        return v.strip()
+
+class GroupBulkImport(BaseModel):
+    """Schema لاستيراد مجموعات متعددة"""
+    groups: list[GroupCreate]
+    
+    @field_validator('groups')
+    def validate_groups(cls, v):
+        if not v or len(v) == 0:
+            raise ValueError('يجب إضافة مجموعة واحدة على الأقل')
+        if len(v) > 100:
+            raise ValueError('الحد الأقصى 100 مجموعة في المرة الواحدة')
+        return v
 
 class GroupResponse(GroupBase):
+    """Schema لعرض بيانات المجموعة"""
     id: int
+    url: Optional[str] = None  # ✅ إضافة URL
     success_count: int = 0
     failure_count: int = 0
     last_post_at: Optional[datetime] = None
     created_at: datetime
+    updated_at: datetime  # ✅ إضافة updated_at
 
     class Config:
         from_attributes = True
