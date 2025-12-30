@@ -7,12 +7,12 @@ import { useState, useEffect } from 'react';
 import { RefreshCw, BarChart3 } from 'lucide-react';
 
 // Components
-import Header from './components/Header';
-import StatsCards from './components/StatsCards';
-import QuickActions from './components/QuickActions';
-import GroupsManager from './components/GroupsManager';
-import AddGroupDialog from './components/AddGroupDialog';
-import ImportGroupsDialog from './components/ImportGroupsDialog';
+import Header from './Components/Header';
+import StatsCards from './Components/StatsCards';
+import QuickActions from './Components/QuickActions';
+import GroupsManager from './Components/GroupsManager';
+import AddGroupDialog from './Components/AddGroupDialog';
+import ImportGroupsDialog from './Components/ImportGroupsDialog';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
