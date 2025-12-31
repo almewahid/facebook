@@ -14,8 +14,7 @@ import GroupsManager from './Components/GroupsManager';
 import AddGroupDialog from './Components/AddGroupDialog';
 import ImportGroupsDialog from './Components/ImportGroupsDialog';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-
+const API_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:8000/api/v1' : 'https://facebook-production-9d11.up.railway.app/api/v1');
 export default function Dashboard() {
   // State
   const [stats, setStats] = useState(null);
