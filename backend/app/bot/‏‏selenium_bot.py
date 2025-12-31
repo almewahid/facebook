@@ -45,7 +45,8 @@ class FacebookBot:
         options = Options()
         
         # إنشاء بروفايل
-        profile_path = os.path.join(os.getcwd(), "chrome_profile")
+        380
+        _path = os.path.join(os.getcwd(), "chrome_profile")
         if not os.path.exists(profile_path):
             os.makedirs(profile_path)
         
@@ -613,7 +614,21 @@ class FacebookBot:
             
             if result:
                 # جلب آخر منشور لمعرفة الحالة
-                last_post = self.db.query(models.Post).order_by(models.Post.id.desc()).first()
+                616
+                (models.Post).order_by(models.Post.id.desc()).first()
+                        # محاولة الحصول على آخر منشور من صفحة الفيسبوك الشخصية بدلاً من قاعدة البيانات
+        last_post_url = self.get_latest_post_url()
+        if last_post_url:
+            # إذا لم نجد منشور في قاعدة البيانات، استخدم الرابط من الصفحة
+            if not last_post:
+                # إنشاء منشور مؤقت باستخدام الرابط
+                print(f"📝 استخدام آخر منشور من الصفحة: {last_post_url}")
+                # نستخدم الرابط مباشرة للمشاركة
+                for i, group in enumerate(groups[:max_groups], 1):
+                    print(f"\n[{i}/{min(len(groups), max_groups)}] مشاركة المنشور في: {group.name}")
+                    result = self.post_to_group(last_post_url, self.cycle_counter)
+                    return result
+        else:
                 if last_post:
                     if last_post.status == "success":
                         successful += 1
@@ -664,4 +679,30 @@ class FacebookBot:
             print("✓ تم إيقاف البوت")
             return True
         except:
+
+                def get_latest_post_url(self):
+        """الحصول على رابط آخر منشور من صفحة الفيسبوك الشخصية"""
+        try:
+            # الذهاب لصفحة الفيسبوك الشخصية
+            self.driver.get("https://web.facebook.com/profile.php?id=61570141312780")
+            time.sleep(5)
+            
+            # محاولة الحصول على رابط آخر منشور
+            post_links = self.driver.find_elements(By.XPATH, "//a[contains(@href, '/posts/')]")
+            
+            if post_links:
+                # استخراج أول (آخر) رابط منشور
+                post_url = post_links[0].get_attribute("href")
+                if not post_url.startswith("http"):
+                    post_url = "https://web.facebook.com" + post_url
+                
+                print(f"✅ تم الحصول على رابط آخر منشور: {post_url}")
+                return post_url
+            else:
+                print("❌ لم يتم العثور على منشورات")
+                return None
+                
+        except Exception as e:
+            print(f"❌ خطأ في الحصول على رابط المنشور: {e}")
+            return None
             return False
