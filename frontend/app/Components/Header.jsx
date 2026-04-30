@@ -2,14 +2,16 @@
 
 'use client';
 
-import { Activity } from 'lucide-react';
+import { Activity, Users, LayoutDashboard } from 'lucide-react';
 
 export default function Header({ 
   onLogout, 
   onSettings, 
   onStartBot, 
   onStopBot, 
-  botStatus 
+  botStatus,
+  currentView, // حالة العرض الحالية
+  setView      // دالة تغيير العرض
 }) {
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
@@ -26,28 +28,44 @@ export default function Header({
           </div>
           
           <div className="flex items-center space-x-3 space-x-reverse">
-            <button onClick={onLogout} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center space-x-2 space-x-reverse transition">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span>تسجيل الخروج</span>
-            </button>
-            
-            <button onClick={onSettings} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition">
-              ⚙️ الإعدادات
-            </button>
-            
-            {botStatus?.is_running ? (
-              <button onClick={onStopBot} className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center space-x-2 space-x-reverse transition">
-                <span>⏸️</span>
-                <span>إيقاف البوت</span>
+            {/* زر التبديل بين اللوحة وإدارة المجموعات */}
+            {currentView === 'dashboard' ? (
+              <button 
+                onClick={() => setView('groups')} 
+                className="px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg flex items-center gap-2 transition font-medium"
+              >
+                <Users className="w-4 h-4" />
+                <span>إدارة المجموعات</span>
               </button>
             ) : (
-              <button onClick={onStartBot} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center space-x-2 space-x-reverse transition animate-pulse">
-                <span>▶️</span>
-                <span>تشغيل البوت</span>
+              <button 
+                onClick={() => setView('dashboard')} 
+                className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg flex items-center gap-2 transition font-medium"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                <span>لوحة التحكم</span>
               </button>
             )}
+
+            <button onClick={onSettings} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+              ⚙️
+            </button>
+
+            {botStatus?.is_running ? (
+              <button onClick={onStopBot} className="px-4 py-2 bg-red-600 text-white rounded-lg transition">
+                ⏸️ إيقاف
+              </button>
+            ) : (
+              <button onClick={onStartBot} className="px-4 py-2 bg-green-600 text-white rounded-lg transition">
+                ▶️ تشغيل
+              </button>
+            )}
+            
+            <button onClick={onLogout} className="p-2 text-gray-400 hover:text-red-500 transition">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>

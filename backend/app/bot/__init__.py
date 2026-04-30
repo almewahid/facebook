@@ -1,1 +1,1 @@
-"""Bot Package"""
+"""API Package"""

@@ -10,7 +10,8 @@ export default function QuickActions({
   onBulkAdd, 
   onImport,
   onSchedule, 
-  onReport 
+  onReport,
+  onPublish  // 👈 أضف هذا
 }) {
   return (
     <div className="mb-8">
@@ -55,6 +56,15 @@ export default function QuickActions({
           description="المنشورات المفصلة + تحليل"
           color="orange"
           onClick={onReport}
+        />
+
+        {/* 👇 زر النشر الجديد */}
+        <ActionCard
+          icon={<span className="text-2xl">📢</span>}
+          title="نشر منشور"
+          description="نشر فوري على المجموعات"
+          color="pink"
+          onClick={onPublish}
         />
         
         <ActionCard

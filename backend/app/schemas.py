@@ -11,6 +11,7 @@ class GroupBase(BaseModel):
 class GroupCreate(GroupBase):
     """Schema لإنشاء مجموعة جديدة"""
     url: Optional[str] = None  # ✅ إضافة URL اختياري
+    category: Optional[str] = "عام"  # 👈 غير الاسم هنا من category_id إلى category
     
     @field_validator('name')
     def validate_name(cls, v):
@@ -37,8 +38,9 @@ class GroupCreate(GroupBase):
 class GroupUpdate(BaseModel):
     """Schema لتحديث مجموعة"""
     name: Optional[str] = None
-    url: Optional[str] = None  # ✅ إضافة URL
+    url: Optional[str] = None
     is_active: Optional[bool] = None
+    category: Optional[str] = None  # ✅ إضافة category
     
     @field_validator('name')
     def validate_name(cls, v):
@@ -71,12 +73,13 @@ class GroupBulkImport(BaseModel):
 class GroupResponse(GroupBase):
     """Schema لعرض بيانات المجموعة"""
     id: int
-    url: Optional[str] = None  # ✅ إضافة URL
+    url: Optional[str] = None
+    category: Optional[str] = "عام"  # ✅ إضافة category
     success_count: int = 0
     failure_count: int = 0
     last_post_at: Optional[datetime] = None
     created_at: datetime
-    updated_at: datetime  # ✅ إضافة updated_at
+    updated_at: datetime
 
     class Config:
         from_attributes = True
