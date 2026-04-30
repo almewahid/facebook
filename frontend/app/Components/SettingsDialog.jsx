@@ -77,8 +77,8 @@ function LoginBrowserButton({ onSuccess }) {
       </div>
       {status === 'open' && (
         <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-100 mt-1">
-          💡 سجل دخولك في نافذة Chrome التي فتحت، ثم اضغط على زر "حفظ الجلسة" هنا.
-        </p>
+  💡 سجل دخولك في نافذة Chrome التي فتحت، ثم اضغط على زر &quot;حفظ الجلسة&quot; هنا.
+</p>
       )}
     </div>
   );
