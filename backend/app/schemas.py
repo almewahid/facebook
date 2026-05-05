@@ -10,29 +10,24 @@ class GroupBase(BaseModel):
 
 class GroupCreate(GroupBase):
     """Schema لإنشاء مجموعة جديدة"""
-    url: Optional[str] = None  # ✅ إضافة URL اختياري
-    category: Optional[str] = "عام"  # 👈 غير الاسم هنا من category_id إلى category
-    
+    url: Optional[str] = None
+    category: Optional[str] = "عام"
+
     @field_validator('name')
     def validate_name(cls, v):
         if not v or len(v.strip()) < 2:
             raise ValueError('اسم المجموعة يجب أن يكون حرفين على الأقل')
         return v.strip()
-    
+
     @field_validator('url')
     def validate_url(cls, v):
-        # ✅ URL اختياري
         if v is None:
             return None
-        
         v = v.strip()
         if not v:
             return None
-            
-        # تحقق من صيغة Facebook
         if 'facebook.com/groups/' not in v and 'fb.com/groups/' not in v:
             raise ValueError('الرابط يجب أن يكون لمجموعة Facebook')
-        
         return v
 
 class GroupUpdate(BaseModel):
@@ -40,28 +35,26 @@ class GroupUpdate(BaseModel):
     name: Optional[str] = None
     url: Optional[str] = None
     is_active: Optional[bool] = None
-    category: Optional[str] = None  # ✅ إضافة category
-    
+    category: Optional[str] = None
+
     @field_validator('name')
     def validate_name(cls, v):
         if v is not None and len(v.strip()) < 2:
             raise ValueError('اسم المجموعة يجب أن يكون حرفين على الأقل')
         return v.strip() if v else None
-    
+
     @field_validator('url')
     def validate_url(cls, v):
         if v is None or not v.strip():
             return None
-            
         if 'facebook.com/groups/' not in v and 'fb.com/groups/' not in v:
             raise ValueError('الرابط يجب أن يكون لمجموعة Facebook')
-        
         return v.strip()
 
 class GroupBulkImport(BaseModel):
     """Schema لاستيراد مجموعات متعددة"""
     groups: list[GroupCreate]
-    
+
     @field_validator('groups')
     def validate_groups(cls, v):
         if not v or len(v) == 0:
@@ -74,10 +67,7 @@ class GroupResponse(GroupBase):
     """Schema لعرض بيانات المجموعة"""
     id: int
     url: Optional[str] = None
-    category: Optional[str] = "عام"  # ✅ إضافة category
-    success_count: int = 0
-    failure_count: int = 0
-    last_post_at: Optional[datetime] = None
+    category: Optional[str] = "عام"
     created_at: datetime
     updated_at: datetime
 
@@ -88,11 +78,15 @@ class GroupResponse(GroupBase):
 
 class PostBase(BaseModel):
     group_id: int
+    content: str
     status: str
-    error_message: Optional[str] = None
+    image_path: Optional[str] = None
     post_url: Optional[str] = None
-    cycle_number: int
-    duration_seconds: Optional[float] = None
+    # إضافة حقل رسالة الخطأ لتمكين Gemini من تحليل الأنماط
+    error_message: Optional[str] = None
+    cycle_number: Optional[int] = None
+    scheduled_time: Optional[datetime] = None
+    posted_at: Optional[datetime] = None
 
 class PostCreate(PostBase):
     pass
@@ -125,18 +119,7 @@ class ScheduleConfig(BaseModel):
     min_delay: int = 90
     max_delay: int = 150
     rest_days: List[int] = [5]
-    randomize_start: bool = True
-    
-class ScheduleConfigUpdate(BaseModel):
-    """تحديث إعدادات الجدولة"""
-    enabled: Optional[bool] = None
-    start_hour: Optional[int] = None
-    end_hour: Optional[int] = None
-    max_groups_per_session: Optional[int] = None
-    min_delay: Optional[int] = None
-    max_delay: Optional[int] = None
-    rest_days: Optional[List[int]] = None
-    randomize_start: Optional[bool] = None
+    random_delay: bool = True
 
 class BotConfigResponse(BotConfigBase):
     id: int
@@ -165,10 +148,9 @@ class BotLogResponse(BotLogBase):
 # ==================== AI Insight Schemas ====================
 
 class AIInsightBase(BaseModel):
-    insight_type: str
-    content: str
-    confidence: float
-    applied: bool = False
+    # مطابقة اسم الحقل مع models.py و ai_engine.py
+    insight: str
+    category: Optional[str] = None
 
 class AIInsightCreate(AIInsightBase):
     pass
@@ -190,10 +172,30 @@ class StatsResponse(BaseModel):
     success_rate: float
     total_groups: int
     active_groups: int
-    total_cycles: int
     last_cycle_at: Optional[datetime] = None
 
-# ==================== Bot Control Schemas ====================
+# ==================== Campaign Schemas ====================
+
+class CampaignCreate(BaseModel):
+    name: str
+    post_ids: Optional[List[int]] = None
+    group_ids: List[int]
+    rotation_strategy: str = "sequential"
+    delay_between_posts: int = 5
+    created_by: str  # إلزامية بناءً على models.py المحدث
+
+class CampaignResponse(BaseModel):
+    id: int
+    name: str
+    status: str
+    sent_count: int
+    total_groups: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+    # ==================== Bot Control Schemas ====================
 
 class BotStartRequest(BaseModel):
     force: bool = False

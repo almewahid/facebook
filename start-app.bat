@@ -6,13 +6,13 @@ echo ====================================
 
 REM Start Backend
 echo [1/2] Starting Backend...
-start "Backend Server" cmd /k "cd /d D:\work\facebook-auto-poster\backend && venv\Scripts\activate && uvicorn app.main:app --reload --port 8000"
+start "Backend Server" cmd /k "cd /d %~dp0backend && venv\Scripts\activate && uvicorn app.main:app --reload --port 8000"
 
 timeout /t 5
 
 REM Start Frontend
 echo [2/2] Starting Frontend...
-start "Frontend Dashboard" cmd /k "cd /d D:\work\facebook-auto-poster\frontend && npm run dev"
+start "Frontend Dashboard" cmd /k "cd /d %~dp0frontend && npm run dev"
 
 timeout /t 3
 

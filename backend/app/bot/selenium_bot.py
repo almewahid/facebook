@@ -42,6 +42,48 @@ class FacebookBot:
         self.cycle_counter = 0
         self.db = SessionLocal()
 
+    def __del__(self):
+        if self.driver:
+            try:
+                self.driver.quit()
+            except Exception:
+                pass
+        if self.db:
+            try:
+                self.db.close()
+            except Exception:
+                pass
+
+    def start(self):
+        """تشغيل متصفح البوت وتجهيز الجلسة."""
+        try:
+            if self.driver:
+                return True
+
+            self.driver = self.create_driver()
+            self.driver.get(self.config.get('page_url', 'https://web.facebook.com'))
+            time.sleep(random.uniform(3, 5))
+            self.log_event("info", "تم تشغيل متصفح البوت")
+            return True
+        except Exception as e:
+            self.driver = None
+            self.log_event("error", "فشل تشغيل متصفح البوت", str(e))
+            print(f"❌ فشل تشغيل متصفح البوت: {e}")
+            return False
+
+    def stop(self):
+        """إيقاف متصفح البوت بأمان."""
+        try:
+            if self.driver:
+                self.driver.quit()
+                self.driver = None
+            self.log_event("info", "تم إيقاف متصفح البوت")
+            return True
+        except Exception as e:
+            self.log_event("error", "فشل إيقاف متصفح البوت", str(e))
+            print(f"❌ فشل إيقاف متصفح البوت: {e}")
+            return False
+
     # ──────────────────────────────────────────
     # 1. إنشاء المتصفح
     # ──────────────────────────────────────────
@@ -118,7 +160,7 @@ class FacebookBot:
             if custom_content and custom_content.value and custom_content.value.strip():
                 return custom_content.value
             return "مرحباً! هذا منشور من البوت الذكي 🤖"
-        except Exception as e:
+        except Exception:
             return "مرحباً! منشور تجريبي 🤖"
 
     def check_if_blocked(self):
@@ -151,6 +193,23 @@ class FacebookBot:
             self.db.commit()
         except Exception:
             self.db.rollback()
+
+    def _find_group_in_db(self, group_name: str):
+        """
+        يبحث أولاً بالاسم، وإن لم يجد يبحث بالـ URL كـ fallback.
+        """
+        group = self.db.query(models.Group).filter(
+            models.Group.name == group_name
+        ).first()
+
+        if not group:
+            group = self.db.query(models.Group).filter(
+                models.Group.url.contains(group_name)
+            ).first()
+            if group:
+                print(f"⚠️ وُجدت المجموعة عبر URL بدلاً من الاسم: {group_name}")
+
+        return group
 
     # ──────────────────────────────────────────
     # 3. خطوات المشاركة (الطريقة الأولى)
@@ -319,25 +378,49 @@ class FacebookBot:
             return self.save_post_result(group_name, cycle_number, "failed", str(e), None, time.time() - start_time)
 
     # ──────────────────────────────────────────
-    # 5. حفظ النتائج
+    # 5. دالة حفظ النتائج الموحدة
     # ──────────────────────────────────────────
-    def _save_new_post_result(self, group, publish_post_id, status, error, url, text=""):
+    def save_post_result(self, group_name, cycle_number, status, error=None, url=None, duration=0, text=""):
         try:
-                if group:
-                    post = models.Post(
+            group = self._find_group_in_db(group_name)
+
+            if group:
+                scheduled_time = self.config.get('scheduled_time') or (datetime.now() if status == "success" else None)
+                posted_at = datetime.now() if status == "success" else None
+
+                new_post = models.Post(
                     group_id=group.id,
-                    content=text,  # تأكد أن المتغير text يصل هنا ليتم تخزينه
+                    content=text,
                     status=status,
                     post_url=url,
-                    cycle_number=publish_post_id
+                    cycle_number=cycle_number,
+                    scheduled_time=scheduled_time,
+                    posted_at=posted_at
+                )
+                self.db.add(new_post)
+
+                if status != "success":
+                    log = models.BotLog(
+                        level="error" if status == "failed" else "warning",
+                        message=f"النتيجة في {group_name}: {status}",
+                        details=f"Error: {error} | Duration: {round(duration, 2)}s"
                     )
-                    self.db.add(post)
-                    self.db.commit()
-                    return status == "success"
+                    self.db.add(log)
+
+                self.db.commit()
+                self.db.refresh(new_post)
+
+                print(f"💾 تم حفظ النتيجة في قاعدة البيانات: {status}")
+                return new_post
+
+            else:
+                print(f"⚠️ لم يتم العثور على المجموعة '{group_name}' في قاعدة البيانات.")
+
         except Exception as e:
-            print(f"خطأ في حفظ البيانات: {e}")
+            print(f"❌ خطأ في دالة حفظ النتائج: {e}")
             self.db.rollback()
-        return False
+
+        return None
 
     # ──────────────────────────────────────────
     # 6. الدورة الكاملة
@@ -362,20 +445,22 @@ class FacebookBot:
         for i, group in enumerate(groups[:max_groups], 1):
             print(f"\n[{i}/{min(len(groups), max_groups)}] النشر في: {group.name}")
             group_identifier = group.url if group.url else group.name
-            result = self.post_to_group(group_identifier, self.cycle_counter)
 
-            if result:
-                last_post = self.db.query(models.Post).order_by(models.Post.id.desc()).first()
-                if last_post:
-                    if last_post.status == "success":
-                        successful += 1
-                        print("✅ نجح")
-                    elif last_post.status == "skipped":
-                        skipped += 1
-                        print("⭕ تم التخطي")
-                    else:
-                        failed += 1
-                        print("❌ فشل")
+            saved_post = self.post_to_group(group_identifier, self.cycle_counter)
+
+            if saved_post is not None:
+                if saved_post.status == "success":
+                    successful += 1
+                    print("✅ نجح")
+                elif saved_post.status == "skipped":
+                    skipped += 1
+                    print("⭕ تم التخطي")
+                else:
+                    failed += 1
+                    print("❌ فشل")
+            else:
+                failed += 1
+                print("❌ فشل (خطأ في الحفظ أو المجموعة غير موجودة في DB)")
 
             if i < min(len(groups), max_groups):
                 wait_time = random.randint(
@@ -422,18 +507,27 @@ class FacebookBot:
     # ──────────────────────────────────────────
     # 8. النشر المباشر بمحتوى جديد (الطريقة الثانية)
     # ──────────────────────────────────────────
-    def post_new_content_to_group(self, group_name: str, text: str, publish_post_id: int, image_path: str = None):
+    def post_new_content_to_group(self, group_name: str, text: str, publish_post_id: int = 0, image_path: str = None):
         """ينشر محتوى جديد مباشرة في صفحة المجموعة"""
         start_time = time.time()
+        
+        # التأكد من أن المتصفح يعمل ولم يتم إغلاقه
+        try:
+            if not self.driver or not self.driver.current_window_handle:
+                print("🔄 المتصفح مغلق أو غير موجود. جاري إعادة التشغيل...")
+                self.driver = None
+                self.start()
+        except Exception:
+            print("🔄 استثناء عند فحص المتصفح. جاري إعادة التشغيل...")
+            self.driver = None
+            self.start()
 
         try:
-            group = self.db.query(models.Group).filter(
-                models.Group.name == group_name
-            ).first()
+            group = self._find_group_in_db(group_name)
 
             if not group:
-                print(f"❌ المجموعة غير موجودة: {group_name}")
-                return False
+                print(f"❌ المجموعة غير موجودة في DB: {group_name}")
+                return None
 
             if group.url and group.url.startswith('http'):
                 group_url = group.url
@@ -445,32 +539,25 @@ class FacebookBot:
             time.sleep(random.uniform(4, 7))
 
             if self.check_if_blocked():
-                return self._save_new_post_result(group, publish_post_id, "failed", "تم اكتشاف حظر", None, time.time() - start_time)
+                return self.save_post_result(group_name, publish_post_id, "failed", "تم اكتشاف حظر", None, time.time() - start_time, text=text)
 
             # ── الضغط على خانة "اكتب شيئًا..." لفتح نافذة المنشور ──
-            write_xpaths = [
-                "//div[contains(@aria-label, 'اكتب شيئ')]",
-                "//div[@aria-label='اكتب شيئًا...']",
-                "//div[contains(@aria-label, 'ما الذي تفكر')]",
-                "//div[@role='button'][contains(@aria-label, 'اكتب')]",
-                "//div[@role='button'][contains(., 'اكتب شيئ')]",
-            ]
+            combined_xpath = (
+                "//div[contains(@aria-label, 'اكتب شيئ')] | "
+                "//div[@aria-label='اكتب شيئًا...'] | "
+                "//div[contains(@aria-label, 'ما الذي تفكر')] | "
+                "//div[@role='button'][contains(@aria-label, 'اكتب')] | "
+                "//div[@role='button'][contains(., 'اكتب شيئ')]"
+            )
 
-            write_box = None
-            for xpath in write_xpaths:
-                try:
-                    write_box = WebDriverWait(self.driver, 8).until(
-                        EC.element_to_be_clickable((By.XPATH, xpath))
-                    )
-                    if write_box:
-                        print(f"✅ وجدت خانة الكتابة: {xpath}")
-                        break
-                except TimeoutException:
-                    continue
-
-            if not write_box:
+            try:
+                write_box = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, combined_xpath))
+                )
+                print("✅ وجدت خانة الكتابة")
+            except TimeoutException:
                 print("❌ لم أجد خانة الكتابة")
-                return self._save_new_post_result(group, publish_post_id, "failed", "خانة الكتابة غير موجودة", None, time.time() - start_time)
+                return self.save_post_result(group_name, publish_post_id, "failed", "خانة الكتابة غير موجودة", None, time.time() - start_time, text=text)
 
             self.driver.execute_script("arguments[0].click();", write_box)
             time.sleep(random.uniform(2, 3))
@@ -496,92 +583,261 @@ class FacebookBot:
 
             if not text_area:
                 print("❌ لم أجد خانة النص")
-                return self._save_new_post_result(group, publish_post_id, "failed", "خانة النص غير موجودة", None, time.time() - start_time)
+                return self.save_post_result(group_name, publish_post_id, "failed", "خانة النص غير موجودة", None, time.time() - start_time, text=text)
 
             text_area.click()
             time.sleep(0.5)
-
-            print(f"✍️ كتابة النص...")
-            for char in text:
-                text_area.send_keys(char)
-                time.sleep(random.uniform(0.03, 0.08))
+            # ── إدخال النص باحترافية (دعم العربية والإيموجي) ──
+            print(f"✍️ جاري كتابة النص المحلل...")
+            try:
+                # المحاولة الأولى: استخدام الحافظة (الأكثر أماناً للعربية والإيموجي)
+                import pyperclip
+                pyperclip.copy(text)
+                text_area.send_keys(Keys.CONTROL, 'v')
+                time.sleep(random.uniform(0.8, 1.5))
+                print("✅ تم لصق النص بنجاح عبر الحافظة")
+            except Exception as clipboard_err:
+                print(f"⚠️ فشل الحافظة، جاري المحاولة عبر JavaScript: {clipboard_err}")
+                try:
+                    # المحاولة الثانية: حقن النص مباشرة عبر المتصفح (JavaScript)
+                    import urllib.parse
+                    safe_encoded_text = urllib.parse.quote(text)
+                    self.driver.execute_script(
+                        "arguments[0].focus(); document.execCommand('insertText', false, decodeURIComponent(arguments[1]));",
+                        text_area, safe_encoded_text
+                    )
+                    print("✅ تم إدخال النص عبر JavaScript")
+                except Exception as js_err:
+                    # المحاولة الأخيرة: الكتابة اليدوية (للنصوص البسيطة فقط)
+                    print(f"⚠️ فشل JavaScript، جاري الكتابة اليدوية: {js_err}")
+                    safe_text = ''.join(c for c in text if ord(c) <= 0xFFFF)
+                    for char in safe_text:
+                        text_area.send_keys(char)
+                        time.sleep(random.uniform(0.05, 0.1))
 
             time.sleep(random.uniform(1, 2))
-
-            # ── رفع الصورة (المحسّن - بدون إحداثيات ثابتة) ──
+            # ---------------------------
+            # رفع الصورة - النسخة المصححة
+            # ---------------------------
             if image_path and os.path.exists(image_path):
                 try:
-                    photo_btn = self.driver.find_element(
-                        By.XPATH,
-                        "//div[@role='dialog']//div[@aria-label='صورة/فيديو']"
-                    )
-                    self.driver.execute_script("arguments[0].click();", photo_btn)
-                    time.sleep(2)  # انتظار فتح نافذة الويندوز
+                    full_path = os.path.abspath(image_path)
+                    print(f"⏳ بدء رفع الصورة: {full_path}")
 
-                    # لصق المسار الكامل مباشرة بدون إحداثيات
-                    pyperclip.copy(os.path.abspath(image_path))
-                    pyautogui.hotkey('ctrl', 'v')
-                    time.sleep(0.5)
-                    pyautogui.press('enter')
+                    # ── الخطوة 1: اضغط زر الصورة أولاً لإنشاء input حقيقي ──
+                    photo_icon_xpaths = [
+                        "//div[@role='dialog']//div[@aria-label='صورة/فيديو']",
+                        "//div[@role='dialog']//div[@aria-label='Photo/video']",
+                        "//div[@role='dialog']//div[contains(@aria-label,'صورة')][@role='button']",
+                        "//div[@role='dialog']//div[contains(@aria-label,'photo')][@role='button']",
+                    ]
 
-                    print(f"⏳ جاري رفع الصورة: {image_path}")
-                    time.sleep(6)  # وقت لمعالجة الصورة
-                    print("✅ تم رفع الصورة")
+                    clicked = False
+                    for xpath in photo_icon_xpaths:
+                        try:
+                            btn = WebDriverWait(self.driver, 5).until(
+                                EC.element_to_be_clickable((By.XPATH, xpath))
+                            )
+                            self.driver.execute_script("arguments[0].click();", btn)
+                            clicked = True
+                            print(f"✅ تم الضغط على زر الصورة: {xpath}")
+                            time.sleep(random.uniform(2, 3))  # انتظر تهيئة الـ input
+                            break
+                        except Exception:
+                            continue
+
+                    if not clicked:
+                        print("❌ لم يتم العثور على زر الصورة")
+                        return self.save_post_result(
+                            group_name, publish_post_id, "failed",
+                            "زر الصورة غير موجود", None,
+                            time.time() - start_time, text=text
+                        )
+
+                    # ── الخطوة 2: الآن ابحث عن input الحقيقي الذي أنشأه فيسبوك ──
+                    try:
+                        file_input = WebDriverWait(self.driver, 10).until(
+                            EC.presence_of_element_located((
+                                By.XPATH,
+                                "//div[@role='dialog']//input[@type='file']"
+                            ))
+                        )
+                        print("✅ تم العثور على input الملف")
+                    except TimeoutException:
+                        print("❌ لم يظهر input الملف بعد الضغط على زر الصورة")
+                        return self.save_post_result(
+                            group_name, publish_post_id, "failed",
+                            "input الملف لم يظهر", None,
+                            time.time() - start_time, text=text
+                        )
+
+                 
+                    # ── الخطوة 3: أرسل المسار مع إغلاق أي نافذة ──
+                    self.driver.execute_script("""
+                        arguments[0].style.display = 'block';
+                        arguments[0].style.visibility = 'visible';
+                        arguments[0].style.opacity = '1';
+                    """, file_input)
+
+                    time.sleep(0.3)
+                    file_input.send_keys(full_path)
+
+                    # انتظر وتحقق من نافذة Open
+                    time.sleep(1.5)
+                    try:
+                        import win32gui
+                        import win32con
+                        import pyautogui
+                        hwnd = win32gui.FindWindow(None, "Open")
+                        if hwnd:
+                            print("🔄 نافذة Open مفتوحة - إرسال المسار إليها...")
+                            pyautogui.hotkey('ctrl', 'a')
+                            time.sleep(0.2)
+                            pyperclip.copy(full_path)
+                            pyautogui.hotkey('ctrl', 'v')
+                            time.sleep(0.3)
+                            pyautogui.press('enter')
+                            time.sleep(0.5)
+                            # تأكد من الإغلاق
+                            hwnd2 = win32gui.FindWindow(None, "Open")
+                            if hwnd2:
+                                win32gui.PostMessage(hwnd2, win32con.WM_CLOSE, 0, 0)
+                                print("✅ تم إغلاق نافذة Open")
+                            print("✅ تم إرسال المسار لنافذة Open")
+                    except Exception:
+                        pass
+                    # ── الخطوة 4: تأكيد ظهور المعاينة (الدليل الحقيقي على النجاح) ──
+                    try:
+                        print("⏳ انتظار ظهور معاينة الصورة...")
+                        WebDriverWait(self.driver, 30).until(
+                            EC.presence_of_element_located((
+                                By.XPATH,
+                                "//div[@role='dialog']//img[contains(@src,'blob:')] | "
+                                "//div[@role='dialog']//div[contains(@aria-label,'إزالة')] | "
+                                "//div[@role='dialog']//div[contains(@aria-label,'Remove')]"
+                            ))
+                        )
+                        print("✅ ظهرت معاينة الصورة - الرفع نجح فعلاً")
+                        time.sleep(random.uniform(2, 3))
+
+                    except TimeoutException:
+                        print("❌ لم تظهر معاينة الصورة - الصورة لم تُرفع فعلياً")
+                        return self.save_post_result(
+                            group_name, publish_post_id, "failed",
+                            "الصورة لم تظهر في المعاينة", None,
+                            time.time() - start_time, text=text
+                        )
+
                 except Exception as e:
-                    print(f"⚠️ فشل رفع الصورة: {e}")
-
-            # ── الضغط على زر النشر ──
-            post_btn_xpaths = [
-                "//div[@role='dialog']//div[@aria-label='نشر'][@role='button']",
-                "//div[@role='dialog']//div[@role='button']//span[text()='نشر']",
-                "//div[@aria-label='نشر'][@role='button']",
-                "//div[@role='button']//span[text()='نشر']",
-                "//div[@role='button']//span[text()='Post']",
-            ]
-
-            post_button = None
-            for xpath in post_btn_xpaths:
-                try:
-                    post_button = WebDriverWait(self.driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, xpath))
+                    print(f"❌ خطأ أثناء رفع الصورة: {e}")
+                    return self.save_post_result(
+                        group_name, publish_post_id, "failed",
+                        str(e), None, time.time() - start_time, text=text
                     )
-                    if post_button:
-                        print(f"✅ وجدت زر النشر: {xpath}")
-                        break
-                except TimeoutException:
-                    continue
 
-            if not post_button:
-                print("❌ لم أجد زر النشر")
-                return self._save_new_post_result(group, publish_post_id, "failed", "زر النشر غير موجود", None, time.time() - start_time)
+            # ---------------------------
+            # النشر النهائي
+            # ---------------------------
+            try:
+                print("⏳ البحث عن زر النشر...")
 
-            time.sleep(random.uniform(1, 2))
-            self.driver.execute_script("arguments[0].click();", post_button)
-            time.sleep(random.uniform(4, 6))
+                post_btn_xpaths = [
+                    "//div[@role='dialog']//div[@aria-label='نشر'][@role='button']",
+                    "//div[@role='dialog']//div[@role='button']//span[text()='نشر']",
+                    "//div[@aria-label='نشر'][@role='button']",
+                    "//div[@role='button']//span[text()='Post']",
+                ]
 
-            post_url = self.driver.current_url
-            print(f"✅ تم النشر في المجموعة: {group_name}")
-            return self._save_new_post_result(group, publish_post_id, "success", None, post_url, time.time() - start_time)
+                post_button = None
 
-        except Exception as e:
-            print(f"❌ خطأ في النشر المباشر: {e}")
-            group_obj = self.db.query(models.Group).filter(models.Group.name == group_name).first()
-            return self._save_new_post_result(group_obj, publish_post_id, "failed", str(e), None, time.time() - start_time)
+                for xpath in post_btn_xpaths:
+                    try:
+                        post_button = WebDriverWait(self.driver, 20).until(
+                            EC.element_to_be_clickable((By.XPATH, xpath))
+                        )
+                        if post_button:
+                            print(f"✅ تم العثور على زر النشر: {xpath}")
+                            break
+                    except Exception:
+                        continue
 
-    def _save_new_post_result(self, group, publish_post_id: int, status: str, error: str, url: str, duration: float = 0, text: str = ""):
-        try:
-            if group:
-                post = models.Post(
-                    group_id=group.id,
-                    content=text,
-                    status=status,
-                    post_url=url,
-                    cycle_number=publish_post_id,
+                if not post_button:
+                    print("❌ زر النشر غير موجود")
+                    return self.save_post_result(
+                        group_name,
+                        publish_post_id,
+                        "failed",
+                        "زر النشر غير موجود",
+                        None,
+                        time.time() - start_time,
+                        text=text
+                    )
+
+                time.sleep(3)
+
+                self.driver.execute_script("arguments[0].click();", post_button)
+
+                print("🚀 تم الضغط على زر النشر...")
+                time.sleep(8)
+                
+                # التحقق من حالة المنشور (نجاح أم قيد الانتظار)
+                is_pending = False
+                try:
+                    page_text = self.driver.page_source.lower()
+                    if "قيد الانتظار" in page_text or "موافقة" in page_text or "pending" in page_text or "انتظار" in page_text:
+                        is_pending = True
+                except Exception:
+                    pass
+
+                post_url = None
+                try:
+                    post_url = self.driver.current_url
+                except Exception:
+                    pass
+
+                if is_pending:
+                    print("✅ منشورك قيد الانتظار لموافقة المسؤول (يعد نجاحاً)")
+                    return self.save_post_result(
+                        group_name,
+                        publish_post_id,
+                        "success",
+                        "منشورك في الانتظار",
+                        post_url,
+                        time.time() - start_time,
+                        text=text
+                    )
+                else:
+                    print("🚀 تم النشر بنجاح")
+                    return self.save_post_result(
+                        group_name,
+                        publish_post_id,
+                        "success",
+                        None,
+                        post_url,
+                        time.time() - start_time,
+                        text=text
+                    )
+
+            except Exception as e:
+                print(f"❌ خطأ أثناء النشر: {e}")
+                return self.save_post_result(
+                    group_name,
+                    publish_post_id,
+                    "failed",
+                    str(e),
+                    None,
+                    time.time() - start_time,
+                    text=text
                 )
-                self.db.add(post)
-                self.db.commit()
-                return status == "success"
+
         except Exception as e:
-            print(f"خطأ في حفظ نتيجة النشر المباشر: {e}")
-            self.db.rollback()
-        return False
+            print(f"❌ خطأ عام في post_new_content_to_group: {e}")
+            return self.save_post_result(
+                group_name,
+                publish_post_id,
+                "failed",
+                str(e),
+                None,
+                time.time() - start_time,
+                text=text
+            )

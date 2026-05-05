@@ -3,6 +3,7 @@ module.exports = {
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './Components/**/*.{js,ts,jsx,tsx,mdx}', // ✅ تم إضافة هذا المسار ليدعم مجلد المكونات الخاص بك
     './app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
@@ -15,7 +16,7 @@ module.exports = {
           300: '#7dd3fc',
           400: '#38bdf8',
           500: '#0ea5e9',
-          600: '#0284c7',
+          600: '#0284c7', // 🔵 هذا هو اللون المستخدم في شريط التقدم الآن
           700: '#0369a1',
           800: '#075985',
           900: '#0c4a6e',

@@ -2,77 +2,94 @@
 
 'use client';
 
-import { Plus, Calendar, BarChart3, Brain } from 'lucide-react';
+import {
+  Plus,
+  Calendar,
+  BarChart3,
+  Brain,
+  FileUp,
+  Layers,
+  Send
+} from 'lucide-react';
 import ActionCard from './ActionCard';
 
-export default function QuickActions({ 
-  onAddGroup, 
-  onBulkAdd, 
+export default function QuickActions({
+  onAddGroup,
+  onBulkAdd,
   onImport,
-  onSchedule, 
+  onSchedule,
   onReport,
-  onPublish  // 👈 أضف هذا
+  onPublish,
+  onSmartMode
 }) {
   return (
     <div className="mb-8">
-      <h2 className="text-xl font-bold text-gray-900 mb-4">🚀 إجراءات سريعة</h2>
-      
+      <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+        <span>🚀</span> إجراءات سريعة
+      </h2>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* إضافة مجموعة مفردة */}
         <ActionCard
           icon={<Plus className="w-5 h-5" />}
           title="إضافة مجموعة"
-          description="مجموعة واحدة"
+          description="إضافة مجموعة واحدة يدوياً"
           color="blue"
           onClick={onAddGroup}
         />
-        
+
+        {/* استيراد ملفات */}
         <ActionCard
-          icon={<span className="text-2xl">📥</span>}
+          icon={<FileUp className="w-5 h-5" />}
           title="استيراد مجموعات"
-          description="من CSV أو Excel"
+          description="من ملفات CSV أو Excel"
           color="green"
           onClick={onImport}
         />
-        
+
+        {/* إضافة جماعية نصية */}
         <ActionCard
-          icon={<span className="text-2xl">📝</span>}
+          icon={<Layers className="w-5 h-5" />}
           title="إضافة جماعية"
-          description="عدة مجموعات دفعة واحدة"
+          description="لصق عدة أسماء دفعة واحدة"
           color="purple"
           onClick={onBulkAdd}
         />
-        
+
+        {/* الجدولة الذكية */}
         <ActionCard
           icon={<Calendar className="w-5 h-5" />}
           title="الجدولة الذكية"
-          description="توقيت تلقائي + أيام راحة"
+          description="توقيت تلقائي وأيام الراحة"
           color="indigo"
           onClick={onSchedule}
         />
-        
-        <ActionCard
-          icon={<BarChart3 className="w-5 h-5" />}
-          title="تقرير مفصل"
-          description="المنشورات المفصلة + تحليل"
-          color="orange"
-          onClick={onReport}
-        />
 
-        {/* 👇 زر النشر الجديد */}
+        {/* النشر الفوري المطور */}
         <ActionCard
-          icon={<span className="text-2xl">📢</span>}
-          title="نشر منشور"
-          description="نشر فوري على المجموعات"
+          icon={<Send className="w-5 h-5" />}
+          title="نشر فوري"
+          description="إرسال منشور للمجموعات الآن"
           color="pink"
           onClick={onPublish}
         />
-        
+
+        {/* الوضع الذكي (Gemini AI) */}
         <ActionCard
           icon={<Brain className="w-5 h-5" />}
-          title="وضع ذكي"
-          description="نشر مخصص + تحليل"
+          title="الوضع الذكي"
+          description="تحليل 76 منشوراً وتوليد محتوى"
           color="red"
-          onClick={() => alert('قريباً!')}
+          onClick={onSmartMode}
+        />
+
+        {/* التقارير التحليلية */}
+        <ActionCard
+          icon={<BarChart3 className="w-5 h-5" />}
+          title="تقارير الأداء"
+          description="تحليل النتائج ومعدلات النجاح"
+          color="orange"
+          onClick={onReport}
         />
       </div>
     </div>

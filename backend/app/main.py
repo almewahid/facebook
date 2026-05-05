@@ -4,7 +4,7 @@ import uvicorn
 import os
 
 from app.database import engine, Base
-from app.api import routes
+from app.api.routers import groups, publish, campaigns, bot, stats_logs_config
 
 Base.metadata.create_all(bind=engine)
 
@@ -24,7 +24,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(routes.router, prefix="/api/v1")
+app.include_router(groups.router, prefix="/api/v1")
+app.include_router(publish.router, prefix="/api/v1")
+app.include_router(campaigns.router, prefix="/api/v1")
+app.include_router(bot.router, prefix="/api/v1")
+app.include_router(stats_logs_config.router, prefix="/api/v1")
 
 @app.on_event("startup")
 async def startup_event():

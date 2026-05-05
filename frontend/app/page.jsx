@@ -1,241 +1,141 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { RefreshCw, PlusCircle, Upload, List, ChevronDown } from 'lucide-react';
 import Header from './Components/Header';
 import Dashboard from './Components/Dashboard';
+import { useAppData } from './hooks/useAppData';
+import SmartScheduleDialog from './Components/SmartScheduleDialog';
+import SmartModeDialog from './Components/SmartModeDialog';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
-// ─── مفتاح حفظ القوائم اليدوية في localStorage ───
-const CATEGORIES_STORAGE_KEY = 'fb_poster_extra_categories';
+// ────────────────────────────────────────────────────────────
+// القائمة المنسدلة الموحّدة لإجراءات المجموعات
+// ────────────────────────────────────────────────────────────
+function GroupActionsMenu({ onAddGroup, onImport, onBulkAdd }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
 
-export default function Page() {
-  // ===== State =====
-  const [stats, setStats]         = useState(null);
-  const [groups, setGroups]       = useState([]);
-  const [posts, setPosts]         = useState([]);
-  const [botStatus, setBotStatus] = useState(null);
-  const [loading, setLoading]     = useState(true);
-
-  const [view, setView] = useState('dashboard');
-
-  // القوائم المضافة يدوياً (تُخزَّن في localStorage حتى تبقى حتى لو فارغة)
-  const [manualCategories, setManualCategories] = useState(() => {
-    try {
-      const saved = localStorage.getItem(CATEGORIES_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Dialog visibility
-  const [showAddGroup,      setShowAddGroup]      = useState(false);
-  const [showImportDialog,  setShowImportDialog]  = useState(false);
-  const [showBulkAdd,       setShowBulkAdd]       = useState(false);
-  const [showSchedule,      setShowSchedule]      = useState(false);
-  const [showReport,        setShowReport]        = useState(false);
-  const [showSettings,      setShowSettings]      = useState(false);
-  const [showPublish,       setShowPublish]       = useState(false);
-  const [showAddCategory,   setShowAddCategory]   = useState(false); // ✅ جديد
-
-  // Form state
-  const [newGroup, setNewGroup]           = useState({ name: '', url: '', is_active: true, category: 'عام' });
-  const [newCategoryName, setNewCategoryName] = useState('');        // ✅ جديد
-  const [searchQuery, setSearchQuery]     = useState('');
-  const [bulkGroups, setBulkGroups]       = useState('');
-  const [importFile, setImportFile]       = useState(null);
-  const [importResult, setImportResult]   = useState(null);
-
-  // ===== Derived =====
-  // القوائم من المجموعات الموجودة + القوائم المضافة يدوياً (بدون تكرار)
-  const categoriesFromGroups = [...new Set(groups.map(g => g.category).filter(Boolean))];
-  const existingCategories = [...new Set([...categoriesFromGroups, ...manualCategories])];
-
-  // ===== Data fetching =====
+  // إغلاق عند النقر خارج القائمة
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const fetchData = async () => {
-    try {
-      const [statsRes, groupsRes, postsRes, statusRes] = await Promise.all([
-        fetch(`${API_URL}/stats`),
-        fetch(`${API_URL}/groups`),
-        fetch(`${API_URL}/posts?limit=20`),
-        fetch(`${API_URL}/bot/status`),
-      ]);
-      setStats(await statsRes.json());
-      setGroups(await groupsRes.json());
-      setPosts(await postsRes.json());
-      setBotStatus(await statusRes.json());
-      setLoading(false);
-    } catch (error) {
-      console.error('خطأ:', error);
-      setLoading(false);
-    }
+  const actions = [
+    {
+      icon: '➕',
+      label: 'إضافة مجموعة',
+      sublabel: 'مجموعة واحدة يدوياً',
+      onClick: onAddGroup,
+    },
+    {
+      icon: '📥',
+      label: 'استيراد مجموعات',
+      sublabel: 'من CSV أو Excel',
+      onClick: onImport,
+    },
+    {
+      icon: '📝',
+      label: 'إضافة جماعية',
+      sublabel: 'لصق روابط متعددة دفعة واحدة',
+      onClick: onBulkAdd,
+    },
+  ];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl shadow-md transition-all duration-150 font-medium text-sm select-none"
+      >
+        <PlusCircle className="w-4 h-4" />
+        إدارة المجموعات
+        <ChevronDown
+          className={`w-4 h-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-fade-in"
+          style={{ animation: 'fadeSlideDown 0.15s ease-out' }}
+        >
+          {actions.map((action, idx) => (
+            <button
+              key={idx}
+              onClick={() => { action.onClick(); setOpen(false); }}
+              className="w-full flex items-start gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-right group"
+            >
+              <span className="text-xl mt-0.5">{action.icon}</span>
+              <div>
+                <p className="font-semibold text-gray-800 text-sm group-hover:text-blue-700">
+                  {action.label}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">{action.sublabel}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeSlideDown {
+          from { opacity: 0; transform: translateY(-6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// الصفحة الرئيسية
+// ────────────────────────────────────────────────────────────
+export default function Page() {
+  const appData = useAppData();
+
+  const [view, setView] = useState('dashboard');
+  const [activeCampaignId, setActiveCampaignId] = useState(null);
+
+  // Dialog visibility
+  const [showAddGroup, setShowAddGroup] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPublish, setShowPublish] = useState(false);
+  const [showSmartMode, setShowSmartMode] = useState(false);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+
+  // Form state
+  const [newGroup, setNewGroup] = useState({ name: '', url: '', is_active: true, category: 'عام' });
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [bulkGroups, setBulkGroups] = useState('');
+  const [importFile, setImportFile] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+
+  // ===== Handlers =====
+  const onAddGroupSubmit = () => {
+    appData.handleAddGroup(newGroup, () => {
+      setShowAddGroup(false);
+      setNewGroup({ name: '', url: '', is_active: true, category: 'عام' });
+    });
   };
 
-  // ===== Bot controls =====
-  const startBot = async () => {
-    try {
-      const response = await fetch(`${API_URL}/bot/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force: false }),
-      });
-      if (response.ok) {
-        alert('✅ تم تشغيل البوت!');
-        setTimeout(fetchData, 1500);
-      }
-    } catch {
-      alert('❌ خطأ في الاتصال بالسيرفر');
-    }
+  const onBulkAddSubmit = () => {
+    appData.handleBulkAdd(bulkGroups, newGroup.category, () => {
+      setShowBulkAdd(false);
+      setBulkGroups('');
+    });
   };
 
-  const stopBot = async () => {
-    try {
-      await fetch(`${API_URL}/bot/stop`, { method: 'POST' });
-      alert('✅ تم إيقاف البوت!');
-      setTimeout(fetchData, 1500);
-    } catch {
-      alert('❌ خطأ');
-    }
-  };
-
-  const logoutFacebook = async () => {
-    if (!confirm('⚠️ هل أنت متأكد؟')) return;
-    try {
-      await fetch(`${API_URL}/bot/logout`, { method: 'POST' });
-      alert('✅ تم تسجيل الخروج!');
-      fetchData();
-    } catch {
-      alert('❌ خطأ');
-    }
-  };
-
-  // ===== ✅ إضافة قائمة جديدة (category فقط) =====
-  const handleAddCategory = (name) => {
-    if (!name || !name.trim()) return;
-    if (existingCategories.includes(name)) return;
-
-    const updated = [...manualCategories, name];
-    setManualCategories(updated);
-
-    // حفظ دائم في localStorage
-    try {
-      localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
-    } catch { /* ignore */ }
-  };
-
-  // حذف قائمة يدوية (اختياري - يمكن استخدامه لاحقاً)
-  const handleDeleteCategory = (categoryName) => {
-    // لا نحذف القوائم المرتبطة بمجموعات فعلية
-    if (categoriesFromGroups.includes(categoryName)) {
-      alert('⚠️ لا يمكن حذف قائمة تحتوي على مجموعات');
-      return;
-    }
-    if (!confirm(`هل أنت متأكد من حذف القائمة "${categoryName}"؟`)) return;
-    const updated = manualCategories.filter(c => c !== categoryName);
-    setManualCategories(updated);
-    try {
-      localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
-    } catch { /* ignore */ }
-  };
-
-  // ===== Group handlers =====
-  const handleAddGroup = async (groupData) => {
-    if (!groupData.name.trim()) { alert('الرجاء إدخال اسم المجموعة'); return; }
-    try {
-      const response = await fetch(`${API_URL}/groups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: groupData.name,
-          url: groupData.url || null,
-          is_active: groupData.is_active,
-          category: groupData.category,
-        }),
-      });
-      if (response.ok) {
-        setShowAddGroup(false);
-        setNewGroup({ name: '', url: '', is_active: true, category: 'عام' });
-        fetchData();
-        alert('✅ تمت إضافة المجموعة وتصنيفها!');
-      }
-    } catch {
-      alert('❌ فشل في إضافة المجموعة');
-    }
-  };
-
-  const handleUpdateGroup = async (groupId, updatedData) => {
-    try {
-      const response = await fetch(`${API_URL}/groups/${groupId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedData),
-      });
-      if (response.ok) fetchData();
-    } catch {
-      alert('❌ فشل في تحديث البيانات');
-    }
-  };
-
-  const handleBulkAdd = async () => {
-    if (!bulkGroups.trim()) { alert('الرجاء إدخال أسماء المجموعات'); return; }
-    const lines = bulkGroups.split('\n').filter(l => l.trim());
-    let successCount = 0;
-
-    for (const line of lines) {
-      try {
-        const response = await fetch(`${API_URL}/groups`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: line.trim(),
-            url: null,
-            is_active: true,
-            category: newGroup.category,
-          }),
-        });
-        if (response.ok) successCount++;
-      } catch { /* skip failed lines */ }
-    }
-
-    setShowBulkAdd(false);
-    setBulkGroups('');
-    fetchData();
-    alert(`✅ تمت إضافة ${successCount} من ${lines.length} مجموعة في قائمة (${newGroup.category})!`);
-  };
-
-  const toggleGroup = async (groupId, currentStatus) => {
-    try {
-      await fetch(`${API_URL}/groups/${groupId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_active: !currentStatus }),
-      });
-      fetchData();
-    } catch {
-      alert('❌ خطأ');
-    }
-  };
-
-  const deleteGroup = async (groupId) => {
-    if (!confirm('هل أنت متأكد؟')) return;
-    try {
-      await fetch(`${API_URL}/groups/${groupId}`, { method: 'DELETE' });
-      fetchData();
-      alert('✅ تم الحذف');
-    } catch {
-      alert('❌ خطأ');
-    }
-  };
-
-  // ===== Import handler =====
   const handleImportFile = async () => {
     if (!importFile) { alert('الرجاء اختيار ملف'); return; }
     const formData = new FormData();
@@ -249,7 +149,7 @@ export default function Page() {
       const result = await response.json();
       if (result.success) {
         setImportResult(result);
-        fetchData();
+        appData.fetchData();
       } else {
         alert(`❌ فشل: ${result.errors?.join(', ')}`);
       }
@@ -273,12 +173,12 @@ export default function Page() {
   };
 
   // ===== Loading screen =====
-  if (loading) {
+  if (appData.loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-blue-600" />
-          <p>جاري التحميل...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="text-center space-y-3">
+          <RefreshCw className="w-10 h-10 animate-spin mx-auto text-blue-600" />
+          <p className="text-gray-500 font-medium">جاري التحميل...</p>
         </div>
       </div>
     );
@@ -288,55 +188,82 @@ export default function Page() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100" dir="rtl">
       <Header
-        onLogout={logoutFacebook}
+        onLogout={appData.logoutFacebook}
         onSettings={() => setShowSettings(true)}
-        onStartBot={startBot}
-        onStopBot={stopBot}
-        botStatus={botStatus}
+        onStartBot={appData.startBot}
+        onStopBot={appData.stopBot}
+        botStatus={appData.botStatus}
         currentView={view}
         setView={setView}
+        // ✅ تمرير القائمة المنسدلة الموحّدة للـ Header ليعرضها بجانب عناصر التحكم
+        groupActionsMenu={
+          <GroupActionsMenu
+            onAddGroup={() => setShowAddGroup(true)}
+            onImport={() => setShowImportDialog(true)}
+            onBulkAdd={() => setShowBulkAdd(true)}
+          />
+        }
       />
 
       <Dashboard
         // Data
-        stats={stats}
-        groups={groups}
-        posts={posts}
-        botStatus={botStatus}
-        existingCategories={existingCategories}
+        stats={appData.stats}
+        groups={appData.groups}
+        posts={appData.posts}
+        botStatus={appData.botStatus}
+        existingCategories={appData.existingCategories}
+
+        activeCampaignId={activeCampaignId}
+        setActiveCampaignId={setActiveCampaignId}
 
         // View
         view={view}
         setView={setView}
 
+        // ✅ تعطيل بطاقتَي "أداء المجموعات" و"معدل النجاح"
+        hideGroupPerformance={true}
+        hideSuccessRate={true}
+
         // Dialog visibility
-        showAddGroup={showAddGroup}           setShowAddGroup={setShowAddGroup}
-        showImportDialog={showImportDialog}   setShowImportDialog={setShowImportDialog}
-        showBulkAdd={showBulkAdd}             setShowBulkAdd={setShowBulkAdd}
-        showSchedule={showSchedule}           setShowSchedule={setShowSchedule}
-        showReport={showReport}               setShowReport={setShowReport}
-        showSettings={showSettings}           setShowSettings={setShowSettings}
-        showPublish={showPublish}             setShowPublish={setShowPublish}
-        showAddCategory={showAddCategory}     setShowAddCategory={setShowAddCategory}   // ✅ جديد
+        showAddGroup={showAddGroup} setShowAddGroup={setShowAddGroup}
+        showImportDialog={showImportDialog} setShowImportDialog={setShowImportDialog}
+        showBulkAdd={showBulkAdd} setShowBulkAdd={setShowBulkAdd}
+        showSchedule={showSchedule} setShowSchedule={setShowSchedule}
+        showReport={showReport} setShowReport={setShowReport}
+        showSettings={showSettings} setShowSettings={setShowSettings}
+        showPublish={showPublish} setShowPublish={setShowPublish}
+        showSmartMode={showSmartMode} setShowSmartMode={setShowSmartMode}
+        showAddCategory={showAddCategory} setShowAddCategory={setShowAddCategory}
 
         // Form state
-        newGroup={newGroup}                   setNewGroup={setNewGroup}
-        newCategoryName={newCategoryName}     setNewCategoryName={setNewCategoryName}   // ✅ جديد
-        searchQuery={searchQuery}             setSearchQuery={setSearchQuery}
-        bulkGroups={bulkGroups}               setBulkGroups={setBulkGroups}
-        importFile={importFile}               setImportFile={setImportFile}
-        importResult={importResult}           setImportResult={setImportResult}
+        newGroup={newGroup} setNewGroup={setNewGroup}
+        newCategoryName={newCategoryName} setNewCategoryName={setNewCategoryName}
+        searchQuery={searchQuery} setSearchQuery={setSearchQuery}
+        bulkGroups={bulkGroups} setBulkGroups={setBulkGroups}
+        importFile={importFile} setImportFile={setImportFile}
+        importResult={importResult} setImportResult={setImportResult}
 
         // Handlers
-        onToggleGroup={toggleGroup}
-        onDeleteGroup={deleteGroup}
-        onAddGroup={handleAddGroup}
-        onUpdateGroup={handleUpdateGroup}
-        onBulkAdd={handleBulkAdd}
+        onToggleGroup={appData.toggleGroup}
+        onDeleteGroup={appData.deleteGroup}
+        onAddGroup={onAddGroupSubmit}
+        onUpdateGroup={appData.handleUpdateGroup}
+        onBulkAdd={onBulkAddSubmit}
         onImportFile={handleImportFile}
         onDownloadTemplate={downloadExcelTemplate}
-        onAddCategory={handleAddCategory}           // ✅ جديد
-        onDeleteCategory={handleDeleteCategory}     // ✅ جديد (اختياري)
+        onAddCategory={appData.handleAddCategory}
+        onDeleteCategory={appData.handleDeleteCategory}
+      />
+
+      <SmartScheduleDialog
+        open={showSchedule}
+        onClose={() => setShowSchedule(false)}
+        onStartBot={(scheduleConfig) => appData.startBot(scheduleConfig)}
+        existingCategories={appData.existingCategories}
+      />
+      <SmartModeDialog
+        open={showSmartMode}
+        onClose={() => setShowSmartMode(false)}
       />
     </div>
   );
