@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
@@ -6,13 +6,17 @@ import os
 import time
 import uuid
 import shutil
+import traceback
+import random
+from pathlib import Path
 
 from app.database import get_db
 from app import models, schemas
 
 router = APIRouter(tags=["publish"])
 
-MEDIA_UPLOAD_DIR = os.path.join(os.getcwd(), "uploaded_media")
+BACKEND_DIR = Path(__file__).resolve().parents[3]
+MEDIA_UPLOAD_DIR = str(BACKEND_DIR / "uploaded_media")
 os.makedirs(MEDIA_UPLOAD_DIR, exist_ok=True)
 CAIRO_TZ = timezone(timedelta(hours=3))
 
@@ -40,12 +44,101 @@ def _save_uploaded_file(upload_file: UploadFile) -> str:
     return dest_path
 
 
+def _media_url(image_path: Optional[str]) -> Optional[str]:
+    if not image_path:
+        return None
+    first_path = str(image_path).split(",")[0].strip()
+    if not first_path:
+        return None
+    return f"/uploaded_media/{os.path.basename(first_path)}"
+
+
+def _post_response(post: models.Post, db: Session) -> dict:
+    group = db.query(models.Group).filter(models.Group.id == post.group_id).first()
+    image_path = post.image_path
+
+    if not image_path and post.cycle_number:
+        publish_post = db.query(models.PublishPost).filter(models.PublishPost.id == post.cycle_number).first()
+        if publish_post and publish_post.image_paths:
+            image_path = publish_post.image_paths
+
+    return {
+        "id": post.id,
+        "group_id": post.group_id,
+        "group_name": group.name if group else None,
+        "content": post.content,
+        "status": post.status,
+        "image_path": image_path,
+        "image_url": _media_url(image_path),
+        "post_url": post.post_url,
+        "error_message": post.error_message,
+        "cycle_number": post.cycle_number,
+        "scheduled_time": post.scheduled_time,
+        "posted_at": post.posted_at,
+        "created_at": post.created_at,
+    }
+
+
 def _safe_min_delay_minutes(db: Session, default: int = 1) -> int:
     saved = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_MIN_DELAY_MINUTES").first()
     try:
         return max(1, int(saved.value)) if saved and saved.value else default
     except ValueError:
         return default
+
+
+def _normalize_delay_range(db: Session, min_value=None, max_value=None) -> tuple[int, int]:
+    safe_min = _safe_min_delay_minutes(db)
+    try:
+        delay_min = int(min_value or safe_min)
+    except (TypeError, ValueError):
+        delay_min = safe_min
+    try:
+        delay_max = int(max_value or delay_min)
+    except (TypeError, ValueError):
+        delay_max = delay_min
+
+    delay_min = max(safe_min, delay_min)
+    delay_max = max(delay_min, delay_max)
+    return delay_min, delay_max
+
+
+def _reset_safety_pause(db: Session):
+    for key, value in {
+        "SAFETY_PAUSED": "false",
+        "SAFETY_PAUSE_REASON": "",
+    }.items():
+        saved = db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+        if saved:
+            saved.value = value
+        else:
+            db.add(models.BotConfig(key=key, value=value))
+    db.commit()
+
+    try:
+        from app.bot.scheduler import bot_scheduler
+        if bot_scheduler and bot_scheduler.bot:
+            bot_scheduler.bot.safety_paused = False
+    except Exception:
+        pass
+
+
+async def _form_group_ids(request: Request) -> Optional[List[int]]:
+    form = await request.form()
+    raw_values = form.getlist("group_ids")
+    if not raw_values:
+        return None
+
+    group_ids = []
+    for raw_value in raw_values:
+        if raw_value in (None, ""):
+            continue
+        try:
+            group_ids.append(int(raw_value))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="معرف مجموعة غير صالح")
+
+    return group_ids or None
 
 
 def _wait_until_publish_time(db: Session, post: models.PublishPost, publish_time: datetime) -> bool:
@@ -93,9 +186,15 @@ def _publish_to_groups_task(post_id: int, db_url: str):
         failed_count = 0
 
         next_publish_time = post.scheduled_start_time or _now_cairo()
-        delay_minutes = max(_safe_min_delay_minutes(db), int(getattr(post, "delay_minutes", 5) or 0))
+        delay_min, delay_max = _normalize_delay_range(
+            db,
+            getattr(post, "delay_minutes", 5),
+            getattr(post, "delay_max_minutes", None),
+        )
 
         if getattr(post, "is_scheduled", False) and _now_cairo() < next_publish_time:
+            post.scheduled_start_time = next_publish_time
+            db.commit()
             if not _wait_until_publish_time(db, post, next_publish_time):
                 return
 
@@ -128,10 +227,21 @@ def _publish_to_groups_task(post_id: int, db_url: str):
                     break
 
                 method = getattr(post, "publish_method", None) or "new_post"
-                if index > 0 and delay_minutes:
-                    next_publish_time = next_publish_time + timedelta(minutes=delay_minutes)
+                if index > 0 and delay_min:
+                    selected_delay = random.randint(delay_min, delay_max)
+                    next_publish_time = _now_cairo() + timedelta(minutes=selected_delay)
+                    post.scheduled_start_time = next_publish_time
+                    db.add(models.BotLog(
+                        level="info",
+                        message="تم تحديد الفاصل العشوائي للمنشور القادم",
+                        details=f"post_id={post_id} | الفاصل={selected_delay} دقيقة | النطاق={delay_min}-{delay_max}"
+                    ))
+                    db.commit()
                     if not _wait_until_publish_time(db, post, next_publish_time):
                         break
+                else:
+                    post.scheduled_start_time = _now_cairo()
+                    db.commit()
 
                 db.refresh(post)
                 if post.status == "cancelled":
@@ -167,13 +277,21 @@ def _publish_to_groups_task(post_id: int, db_url: str):
                         message=f"✅ تم النشر في: {group.name}",
                         details=f"post_id={post_id} | url={post_url}"
                     )
+                elif result and result.status == "skipped":
+                    failed_count += 1
+                    post_url = None
+                    log = models.BotLog(
+                        level="warning",
+                        message=f"توقف النشر في: {group.name}",
+                        details=f"post_id={post_id} | السبب: {result.error_message or 'تم تخطي النشر لحماية الحساب'}"
+                    )
                 else:
                     failed_count += 1
                     post_url = None
                     log = models.BotLog(
                         level="error",
                         message=f"❌ فشل النشر في: {group.name}",
-                        details=f"post_id={post_id}"
+                        details=f"post_id={post_id} | السبب: {getattr(result, 'error_message', None) or 'لم يرجع البوت نتيجة نجاح'}"
                     )
 
             except Exception as e:
@@ -193,10 +311,11 @@ def _publish_to_groups_task(post_id: int, db_url: str):
 
             if bot and bot.should_stop_for_safety():
                 post.status = "failed"
+                safety_reason = bot._get_config_value("SAFETY_PAUSE_REASON", "تم إيقاف النشر لحماية الحساب")
                 db.add(models.BotLog(
                     level="warning",
-                    message="توقف النشر بعد تحذير حماية الحساب",
-                    details=f"post_id={post_id}"
+                    message="توقف النشر بسبب حد الحماية اليومي أو حماية الحساب",
+                    details=f"post_id={post_id} | السبب: {safety_reason}"
                 ))
                 db.commit()
                 break
@@ -224,7 +343,7 @@ def get_posts(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
             & models.Post.status.in_(["pending", "draft"])
         )
     ).order_by(models.Post.created_at.desc()).offset(skip).limit(limit).all()
-    return posts
+    return [_post_response(post, db) for post in posts]
 
 
 @router.get("/posts/{post_id}", response_model=schemas.PostResponse)
@@ -232,24 +351,28 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
     post = db.query(models.Post).filter(models.Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="المنشور غير موجود")
-    return post
+    return _post_response(post, db)
 
 
 @router.post("/publish", status_code=status.HTTP_202_ACCEPTED)
 async def publish_post(
     background_tasks: BackgroundTasks,
+    request: Request,
     text: str = Form(...),
     images: Optional[List[UploadFile]] = File(None),
     video: Optional[UploadFile] = File(None),
-    group_ids: Optional[List[int]] = Form(None),
     is_scheduled: bool = Form(False),
     start_time: Optional[str] = Form(None),
     delay_minutes: int = Form(5),
+    delay_max_minutes: Optional[int] = Form(None),
     is_rotation: bool = Form(False),
     second_text: Optional[str] = Form(None),
     publish_method: str = Form("new_post"),
     db: Session = Depends(get_db),
 ):
+    _reset_safety_pause(db)
+    group_ids = await _form_group_ids(request)
+
     query = db.query(models.Group).filter(models.Group.is_active == True)
     if group_ids:
         query = query.filter(models.Group.id.in_(group_ids))
@@ -261,7 +384,7 @@ async def publish_post(
     method = publish_method if publish_method in ("new_post", "share_page") else "new_post"
     parsed_start_time = _parse_optional_datetime(start_time)
     should_schedule = bool(is_scheduled and parsed_start_time)
-    safe_delay_minutes = max(_safe_min_delay_minutes(db), int(delay_minutes or 0))
+    safe_delay_min, safe_delay_max = _normalize_delay_range(db, delay_minutes, delay_max_minutes)
 
     video_path = None
     if video and method == "new_post":
@@ -291,7 +414,8 @@ async def publish_post(
         target_group_ids=",".join(map(str, group_ids)) if group_ids else None,
         is_scheduled=should_schedule,
         scheduled_start_time=parsed_start_time if should_schedule else None,
-        delay_minutes=safe_delay_minutes,
+        delay_minutes=safe_delay_min,
+        delay_max_minutes=safe_delay_max,
     )
     db.add(new_post)
     db.commit()
@@ -302,7 +426,7 @@ async def publish_post(
         message=f"📢 بدء النشر في {active_groups_count} مجموعة",
         details=(
             f"post_id={new_post.id} | method={method} | صور={len(image_paths)} | فيديو={'نعم' if video_path else 'لا'}"
-            f" | جدولة={is_scheduled} | بدء={start_time or '-'} | تأخير={safe_delay_minutes}"
+            f" | جدولة={is_scheduled} | بدء={start_time or '-'} | تأخير={safe_delay_min}-{safe_delay_max}"
             f" | تدوير={is_rotation} | نص_ثاني={'نعم' if second_text else 'لا'}"
         )
     )
@@ -343,6 +467,113 @@ async def publish_post(
     }
 
 
+@router.post("/publish-safe", status_code=status.HTTP_202_ACCEPTED)
+async def publish_post_safe(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        _reset_safety_pause(db)
+        form = await request.form()
+        text = str(form.get("text") or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="الرجاء كتابة نص المنشور")
+
+        publish_method = str(form.get("publish_method") or "new_post")
+        method = publish_method if publish_method in ("new_post", "share_page") else "new_post"
+        group_ids = await _form_group_ids(request)
+
+        query = db.query(models.Group).filter(models.Group.is_active == True)
+        if group_ids:
+            query = query.filter(models.Group.id.in_(group_ids))
+        active_groups_count = query.count()
+        if active_groups_count == 0:
+            raise HTTPException(status_code=400, detail="لا توجد مجموعات نشطة للنشر فيها")
+
+        safe_delay_min, safe_delay_max = _normalize_delay_range(
+            db,
+            form.get("delay_minutes"),
+            form.get("delay_max_minutes"),
+        )
+
+        image_paths = []
+        for img in form.getlist("images"):
+            if not getattr(img, "filename", None):
+                continue
+            if img.content_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+                raise HTTPException(status_code=400, detail=f"نوع الصورة غير مدعوم: {img.content_type}")
+            image_paths.append(_save_uploaded_file(img))
+
+        video = form.get("video")
+        video_path = None
+        if video and getattr(video, "filename", None):
+            if video.content_type not in {"video/mp4", "video/avi", "video/mov", "video/mkv", "video/webm"}:
+                raise HTTPException(status_code=400, detail=f"نوع الفيديو غير مدعوم: {video.content_type}")
+            video_path = _save_uploaded_file(video)
+
+        new_post = models.PublishPost(
+            text=text if method == "new_post" else "",
+            image_paths=",".join(image_paths) if image_paths else None,
+            video_path=video_path,
+            publish_method=method,
+            status="publishing",
+            total_groups=active_groups_count,
+            success_count=0,
+            failed_count=0,
+            created_at=datetime.utcnow(),
+            target_group_ids=",".join(map(str, group_ids)) if group_ids else None,
+            is_scheduled=False,
+            scheduled_start_time=None,
+            delay_minutes=safe_delay_min,
+            delay_max_minutes=safe_delay_max,
+        )
+        db.add(new_post)
+        db.commit()
+        db.refresh(new_post)
+
+        db.add(models.BotLog(
+            level="info",
+            message=f"📢 بدء النشر في {active_groups_count} مجموعة",
+            details=(
+                f"post_id={new_post.id} | method={method} | صور={len(image_paths)}"
+                f" | فيديو={'نعم' if video_path else 'لا'} | تأخير={safe_delay_min}-{safe_delay_max}"
+            )
+        ))
+        db.commit()
+
+        from app.database import DATABASE_URL
+        background_tasks.add_task(_publish_to_groups_task, new_post.id, DATABASE_URL)
+
+        return {
+            "status": "accepted",
+            "message": f"✅ بدأ النشر في {active_groups_count} مجموعة في الخلفية",
+            "post_id": new_post.id,
+            "total_groups": active_groups_count,
+            "publish_method": method,
+            "scheduled_start_time": None,
+            "media": {
+                "images_count": len(image_paths),
+                "has_video": video_path is not None,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        detail = f"{exc.__class__.__name__}: {exc}"
+        try:
+            db.add(models.BotLog(
+                level="error",
+                message="فشل إنشاء عملية النشر",
+                details=f"{detail}\n{traceback.format_exc(limit=3)}"
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+        raise HTTPException(status_code=500, detail=detail)
+
+
 @router.get("/publish/{post_id}/status")
 def get_publish_status(post_id: int, db: Session = Depends(get_db)):
     """متابعة حالة النشر الفوري مع عرض التنبيهات التقنية اللحظية"""
@@ -351,9 +582,10 @@ def get_publish_status(post_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="المنشور غير موجود")
 
     progress = 0
+    processed = 0
     if post.total_groups and post.total_groups > 0:
-        done = (post.success_count or 0) + (post.failed_count or 0)
-        progress = round((done / post.total_groups) * 100, 1)
+        processed = (post.success_count or 0) + (post.failed_count or 0)
+        progress = round((processed / post.total_groups) * 100, 1)
 
     recent_logs = db.query(models.BotLog).filter(
         models.BotLog.details.contains(f"post_id={post_id}")
@@ -369,15 +601,21 @@ def get_publish_status(post_id: int, db: Session = Depends(get_db)):
         for group in groups:
             last_post = db.query(models.Post).filter(
                 models.Post.group_id == group.id,
-                models.Post.cycle_number == post_id
+                models.Post.cycle_number == post_id,
+                models.Post.created_at >= post.created_at
             ).order_by(models.Post.id.desc()).first()
 
             results.append({
                 "group_id": group.id,
                 "group_name": group.name,
                 "status": last_post.status if last_post else "pending",
+                "error_message": last_post.error_message if last_post else None,
                 "post_url": last_post.post_url if last_post else None,
             })
+
+    next_post_time = None
+    if post.status in ("pending", "publishing"):
+        next_post_time = post.scheduled_start_time or _now_cairo()
 
     return {
         "post_id": post.id,
@@ -392,6 +630,8 @@ def get_publish_status(post_id: int, db: Session = Depends(get_db)):
         },
         "created_at": post.created_at,
         "published_at": post.published_at,
+        "is_scheduled": bool(post.is_scheduled),
+        "next_post_time": next_post_time,
         "results": results,
         "alerts": [
             {

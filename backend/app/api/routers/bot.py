@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import re
 import shutil
@@ -36,8 +36,22 @@ def stop_bot(request: schemas.BotStopRequest = schemas.BotStopRequest(), db: Ses
     if bot_scheduler:
         bot_scheduler.stop()
 
+    stopped_posts = db.query(models.PublishPost).filter(
+        models.PublishPost.status.in_(["pending", "publishing"])
+    ).update({models.PublishPost.status: "cancelled"}, synchronize_session=False)
+
+    stopped_campaigns = db.query(models.Campaign).filter(
+        models.Campaign.status == "active"
+    ).update({models.Campaign.status: "cancelled"}, synchronize_session=False)
+
     log = models.BotLog(level="info", message="تم إيقاف البوت", details=f"Force: {request.force}")
     db.add(log)
+    if stopped_posts or stopped_campaigns:
+        db.add(models.BotLog(
+            level="info",
+            message="تم إيقاف كل عمليات النشر النشطة",
+            details=f"publish_posts={stopped_posts} | campaigns={stopped_campaigns}"
+        ))
     db.commit()
 
     return schemas.BotStopResponse(
@@ -49,11 +63,35 @@ def stop_bot(request: schemas.BotStopRequest = schemas.BotStopRequest(), db: Ses
 
 @router.get("/status", response_model=schemas.BotStatusResponse)
 def get_bot_status(db: Session = Depends(get_db)):
-    is_running = bot_scheduler.is_running if bot_scheduler else False
+    stale_cutoff = datetime.utcnow() - timedelta(minutes=30)
+
+    db.query(models.PublishPost).filter(
+        models.PublishPost.status.in_(["pending", "publishing"]),
+        ((models.PublishPost.success_count + models.PublishPost.failed_count) >= models.PublishPost.total_groups)
+    ).update({models.PublishPost.status: "done"}, synchronize_session=False)
+
+    db.query(models.PublishPost).filter(
+        models.PublishPost.status.in_(["pending", "publishing"]),
+        models.PublishPost.created_at < stale_cutoff,
+        models.PublishPost.success_count == 0,
+        models.PublishPost.failed_count == 0,
+    ).update({models.PublishPost.status: "cancelled"}, synchronize_session=False)
+
+    db.commit()
+
+    active_publishes = db.query(models.PublishPost).filter(
+        models.PublishPost.status.in_(["pending", "publishing"])
+    ).count()
+    active_campaigns = db.query(models.Campaign).filter(
+        models.Campaign.status == "active"
+    ).count()
+    is_running = bool((bot_scheduler.is_running if bot_scheduler else False) or active_publishes or active_campaigns)
     last_post = db.query(models.Post).order_by(models.Post.created_at.desc()).first()
 
     return schemas.BotStatusResponse(
         is_running=is_running,
+        active_publishes=active_publishes,
+        active_campaigns=active_campaigns,
         current_cycle=last_post.cycle_number if last_post else None,
         current_group=None,
         started_at=None,

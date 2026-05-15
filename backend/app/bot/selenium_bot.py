@@ -244,12 +244,12 @@ class FacebookBot:
             return True
         return self._get_config_bool("SAFETY_PAUSED", False)
 
-    def safety_gate(self, group_name: str = None):
+    def safety_gate(self, group_name: str = None, ignore_daily_limit: bool = False):
         if self.should_stop_for_safety():
             return "النشر متوقف لحماية الحساب"
 
         daily_limit = self._get_config_int("SAFETY_DAILY_POST_LIMIT", 10)
-        if daily_limit > 0 and self._count_successful_posts_today() >= daily_limit:
+        if not ignore_daily_limit and daily_limit > 0 and self._count_successful_posts_today() >= daily_limit:
             reason = f"تم الوصول للحد اليومي الآمن ({daily_limit} منشور)"
             self._trigger_safety_pause(reason)
             return reason
@@ -857,11 +857,11 @@ class FacebookBot:
     # ──────────────────────────────────────────
     # 8. النشر المباشر بمحتوى جديد (الطريقة الثانية)
     # ──────────────────────────────────────────
-    def post_new_content_to_group(self, group_name: str, text: str, publish_post_id: int = 0, image_path: str = None):
+    def post_new_content_to_group(self, group_name: str, text: str, publish_post_id: int = 0, image_path: str = None, ignore_daily_limit: bool = False):
         """ينشر محتوى جديد مباشرة في صفحة المجموعة"""
         start_time = time.time()
 
-        safety_reason = self.safety_gate(group_name)
+        safety_reason = self.safety_gate(group_name, ignore_daily_limit=ignore_daily_limit)
         if safety_reason:
             return self.save_post_result(
                 group_name,
@@ -1145,7 +1145,7 @@ class FacebookBot:
 
                 time.sleep(3)
 
-                safety_reason = self.safety_gate(group_name)
+                safety_reason = self.safety_gate(group_name, ignore_daily_limit=ignore_daily_limit)
                 if safety_reason:
                     return self.save_post_result(
                         group_name,

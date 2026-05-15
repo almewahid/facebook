@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
@@ -35,6 +35,25 @@ def to_cairo_iso(dt_str: Optional[str]) -> Optional[str]:
 
 
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+async def _form_group_ids(request: Request) -> List[int]:
+    form = await request.form()
+    raw_values = form.getlist("group_ids")
+    group_ids = []
+
+    for raw_value in raw_values:
+        if raw_value in (None, ""):
+            continue
+        try:
+            group_ids.append(int(raw_value))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="معرف مجموعة غير صالح")
+
+    if not group_ids:
+        raise HTTPException(status_code=400, detail="يجب اختيار مجموعة واحدة على الأقل")
+
+    return group_ids
 
 
 def next_scheduled_cairo_time(
@@ -218,9 +237,9 @@ def create_campaign(campaign_data: schemas.CampaignCreate, db: Session = Depends
 
 @router.post("/media", response_model=schemas.CampaignResponse, status_code=status.HTTP_201_CREATED)
 async def create_campaign_with_media(
+    request: Request,
     name: str = Form(...),
     texts: str = Form(...),
-    group_ids: List[int] = Form(...),
     start_time: Optional[str] = Form(None),
     delay_between_posts: int = Form(5),
     rotation_strategy: str = Form("sequential"),
@@ -231,6 +250,8 @@ async def create_campaign_with_media(
     video: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
 ):
+    group_ids = await _form_group_ids(request)
+
     if video:
         raise HTTPException(status_code=400, detail="الفيديو كملف غير مدعوم في الحملات حالياً.")
 

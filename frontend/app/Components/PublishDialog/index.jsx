@@ -6,7 +6,38 @@ import PublishForm from './PublishForm';
 import PublishProgress from './PublishProgress';
 import PublishResults from './PublishResults';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+
+function appendGroupIds(formData, groupIds) {
+  groupIds.forEach(id => formData.append('group_ids', id));
+
+  if (groupIds.length === 1) {
+    formData.append('group_ids', groupIds[0]);
+  }
+}
+
+async function readApiError(response) {
+  const raw = await response.text();
+  if (!raw) return `خطأ ${response.status}`;
+
+  try {
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.detail)) {
+      return data.detail.map(item => item.msg || item.detail || String(item)).join('، ');
+    }
+    return data.detail || data.message || raw;
+  } catch {
+    return raw;
+  }
+}
+
+async function resetSafetyPause() {
+  try {
+    await fetch(`${API_URL}/bot/safety-reset`, { method: 'POST' });
+  } catch {
+    // If the reset endpoint is unavailable, continue and let the publish request report the real state.
+  }
+}
 
 export default function PublishDialog({ show, onClose, onSuccess, existingCategories = [], publishMethod = 'new_post' }) {
   const isSharePageMethod = publishMethod === 'share_page';
@@ -90,7 +121,10 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
     pollCountRef.current = 0;
 
     try {
-      const isCampaign = isSharePageMethod || isScheduled || isRotation;
+      await resetSafetyPause();
+
+      const isTimedSchedule = isScheduled && publishMode !== 'now';
+      const isCampaign = isSharePageMethod || isTimedSchedule || isRotation;
 
       if (isCampaign) {
         if (!isSharePageMethod && video) {
@@ -123,7 +157,7 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
           campaignForm.append('name', campaignData.name);
           campaignForm.append('texts', JSON.stringify(campaignData.texts));
           campaignForm.append('publish_method', campaignData.publish_method);
-          campaignData.group_ids.forEach(id => campaignForm.append('group_ids', id));
+          appendGroupIds(campaignForm, campaignData.group_ids);
           if (campaignData.start_time) {
             campaignForm.append('start_time', campaignData.start_time);
           }
@@ -142,8 +176,7 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
         }
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.detail || `خطأ ${res.status}`);
+          throw new Error(await readApiError(res));
         }
 
         const data = await res.json();
@@ -167,14 +200,16 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
       const formData = new FormData();
       formData.append('text', textWithVideoUrl);
       formData.append('publish_method', publishMethod);
-      targetGroups.forEach(g => formData.append('group_ids', g.id));
+      formData.append('is_scheduled', 'false');
+      formData.append('delay_minutes', String(delayMin));
+      formData.append('delay_max_minutes', String(delayMax));
+      appendGroupIds(formData, targetGroups.map(g => g.id));
       images.forEach(img => formData.append('images', img.file));
       if (video) formData.append('video', video.file);
 
-      const res = await fetch(`${API_URL}/publish`, { method: 'POST', body: formData });
+      const res = await fetch(`${API_URL}/publish-safe`, { method: 'POST', body: formData });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || `خطأ ${res.status}`);
+        throw new Error(await readApiError(res));
       }
 
       const data = await res.json();

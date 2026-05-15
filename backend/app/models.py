@@ -67,6 +67,7 @@ class PublishPost(Base):
     is_scheduled      = Column(Boolean, default=False)
     scheduled_start_time = Column(DateTime, nullable=True)
     delay_minutes     = Column(Integer, default=5)
+    delay_max_minutes = Column(Integer, default=5)
     created_at        = Column(DateTime, default=datetime.utcnow)
     published_at      = Column(DateTime, nullable=True)
 

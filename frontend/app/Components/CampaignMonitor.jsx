@@ -96,6 +96,15 @@ function isPendingApproval(post) {
   return ['pending', 'approval', 'requires admin', 'موافقة', 'انتظار موافقة'].some(k => msg.includes(k));
 }
 
+function getReadableAlert(alert) {
+  const text = `${alert?.msg || ''} ${alert?.details || ''}`;
+  const dailyLimitMatch = text.match(/الحد اليومي الآمن\s*\(([^)]+)\)/);
+  if (dailyLimitMatch) {
+    return `توقف النشر لأن حد الحماية اليومي وصل إلى ${dailyLimitMatch[1]}. يمكنك تعديل هذا الرقم من الإعدادات.`;
+  }
+  return alert?.msg || '';
+}
+
 const CampaignMonitor = ({ campaignId, publishId }) => {
   const [data, setData] = useState(null);
   const [stopping, setStopping] = useState(false);
@@ -157,7 +166,8 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
   const activity = isPublish ? data.results : (data.results || data.recent_activity);
   const isWaitingBot = data.status === 'waiting_bot';
   const isRunning = ['active', 'publishing'].includes(data.status);
-  const countdownView = countdown === null || countdown === 0 ? null : formatCountdown(countdown);
+  const showNextPostTimer = isRunning;
+  const countdownView = formatCountdown(Math.max(0, countdown ?? 0));
 
   const getArabicStatus = (s) => ({
     pending: 'قيد الانتظار', success: 'نجاح', sent: 'تم الإرسال',
@@ -180,6 +190,15 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
     if (['success', 'sent'].includes(s)) return '✅';
     if (s === 'failed') return '❌';
     return '🔄';
+  };
+
+  const getDisplayItem = (item, idx) => {
+    if (!isPublish || !isRunning || item.status !== 'pending') return item;
+    const processed = sentCount + failedCount + pendingApprovalCount;
+    if (idx === processed) {
+      return { ...item, status: 'publishing' };
+    }
+    return item;
   };
 
   return (
@@ -250,27 +269,21 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
       )}
 
       {/* ✅ العداد التنازلي */}
-      {isRunning && (
+      {showNextPostTimer && (
         <div className="mb-6 flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl">
           <div>
             <p className="text-xs text-blue-600 font-semibold mb-0.5">⏱ المنشور القادم خلال</p>
             <p className="text-xs text-gray-400">
-              {data.next_post_time ? formatCairoDateTime(data.next_post_time) : 'يتم الحساب...'}
+              {data.next_post_time ? formatCairoDateTime(data.next_post_time) : '00:00'}
             </p>
           </div>
           <div className="text-left">
-            {countdown === null ? (
-              <span className="text-blue-400 font-medium text-sm animate-pulse">جاري التحضير...</span>
-            ) : countdown === 0 ? (
-              <span className="text-green-600 font-bold text-sm animate-pulse">جاري النشر...</span>
-            ) : (
-              <div className="text-left">
-                <span className="font-mono text-2xl font-bold text-blue-700">
-                  {countdownView.value}
-                </span>
-                <p className="text-xs text-blue-400 mt-0.5 text-center">{countdownView.label}</p>
-              </div>
-            )}
+            <div className="text-left">
+              <span className={`font-mono text-2xl font-bold ${countdown === 0 ? 'text-green-600' : 'text-blue-700'}`}>
+                {countdownView.value}
+              </span>
+              <p className="text-xs text-blue-400 mt-0.5 text-center">{countdownView.label}</p>
+            </div>
           </div>
         </div>
       )}
@@ -278,7 +291,8 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
       {/* سجل المنشورات أو خطة النشر */}
       <div className="space-y-2 mb-6">
         <h3 className="text-sm font-semibold text-gray-700 mb-2">خطة النشر / سجل العمليات:</h3>
-        {(data.plan || activity)?.map((item, idx) => {
+        {(data.plan || activity)?.map((rawItem, idx) => {
+          const item = getDisplayItem(rawItem, idx);
           const isApproval = isPendingApproval(item);
           return (
             <div key={idx} className={`flex justify-between items-center p-2 rounded text-sm ${isApproval ? 'bg-yellow-50 border border-yellow-100' : 'bg-gray-50'}`}>
@@ -327,7 +341,7 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
                     (alert.level === 'info' || alert.level === 'success') ? 'bg-green-50 text-green-700 border-green-100' :
                       'bg-yellow-50 text-yellow-700 border-yellow-100'}`}>
                   <div className="flex justify-between">
-                    <span className="font-bold">{icon} {alert.msg}</span>
+                    <span className="font-bold">{icon} {getReadableAlert(alert)}</span>
                     {/* ✅ الوقت الصحيح بتوقيت القاهرة */}
                     <span className="opacity-60">{alert.time ? formatCairoTime(alert.time) : 'الآن'}</span>
                   </div>

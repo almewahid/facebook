@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Plus, FolderPlus, Edit2, Check, X, Trash2 } from 'lucide-react';
+import { Search, Plus, FolderPlus, Edit2, Check, X, Trash2, ExternalLink } from 'lucide-react';
 
 export default function GroupsManager({
   groups,
@@ -34,6 +34,22 @@ export default function GroupsManager({
     const matchesCategory = activeTab === 'الكل' || (g.category || 'عام') === activeTab;
     return matchesSearch && matchesCategory;
   });
+
+  const formatLastPostTime = (value) => {
+    if (!value) return 'لم يتم النشر';
+    return new Intl.DateTimeFormat('ar-EG', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(value));
+  };
+
+  const formatMinutesAgo = (minutes) => {
+    if (minutes === null || minutes === undefined) return null;
+    if (minutes < 1) return 'الآن';
+    if (minutes === 1) return 'منذ دقيقة';
+    if (minutes === 2) return 'منذ دقيقتين';
+    return `منذ ${minutes} دقيقة`;
+  };
 
   // دوال التحرير
   const startEditing = (group) => {
@@ -144,8 +160,11 @@ export default function GroupsManager({
         <table className="w-full text-right">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase">اسم المجموعة</th>
+              <th className="w-64 px-4 py-3 text-xs font-bold text-gray-500 uppercase">اسم المجموعة</th>
               <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase">القائمة</th>
+              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase">آخر نشر</th>
+              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase">رابط المنشور</th>
+              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase">رقم عملية النشر</th>
               <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase">الحالة</th>
               <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase text-center">الإجراءات</th>
             </tr>
@@ -153,7 +172,7 @@ export default function GroupsManager({
           <tbody className="divide-y divide-gray-100">
             {filteredGroups.length === 0 ? (
               <tr>
-                <td colSpan="4" className="px-6 py-12 text-center text-gray-400">
+                <td colSpan="7" className="px-6 py-12 text-center text-gray-400">
                   <FolderPlus className="w-10 h-10 mx-auto mb-2 opacity-30" />
                   <p>لا توجد مجموعات في هذه القائمة</p>
                 </td>
@@ -183,13 +202,13 @@ export default function GroupsManager({
                       </div>
                     ) : (
                       <div>
-                        <div className="text-sm font-bold text-gray-900">{group.name}</div>
+                        <div className="max-w-[220px] truncate text-sm font-bold text-gray-900">{group.name}</div>
                         {group.url ? (
                           <a
                             href={group.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="mt-1 inline-block max-w-xs truncate text-[11px] text-blue-600 hover:underline"
+                            className="mt-1 inline-block max-w-[220px] truncate text-[11px] text-blue-600 hover:underline"
                             dir="ltr"
                           >
                             {group.url}
@@ -217,6 +236,49 @@ export default function GroupsManager({
                       <span className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs font-bold border border-blue-100">
                         {group.category || 'عام'}
                       </span>
+                    )}
+                  </td>
+
+                  {/* عمود آخر نشر */}
+                  <td className="w-64 px-4 py-4">
+                    <div className="text-sm font-semibold text-gray-800">
+                      {formatLastPostTime(group.last_posted_at)}
+                    </div>
+                    {formatMinutesAgo(group.last_post_minutes_ago) ? (
+                      <div className="mt-1 text-xs text-gray-500">
+                        {formatMinutesAgo(group.last_post_minutes_ago)}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-xs text-gray-400">لا توجد دقائق مسجلة</div>
+                    )}
+                  </td>
+
+                  {/* عمود رابط آخر منشور */}
+                  <td className="px-6 py-4">
+                    {group.last_post_url ? (
+                      <a
+                        href={group.last_post_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 max-w-[180px] text-sm text-blue-600 hover:underline"
+                        dir="ltr"
+                      >
+                        <ExternalLink className="w-4 h-4 shrink-0" />
+                        <span className="truncate">فتح المنشور</span>
+                      </a>
+                    ) : (
+                      <span className="text-xs text-gray-400">لا يوجد رابط</span>
+                    )}
+                  </td>
+
+                  {/* عمود رقم عملية النشر */}
+                  <td className="px-6 py-4">
+                    {group.last_publish_process_id ? (
+                      <span className="inline-flex min-w-10 justify-center rounded bg-gray-100 px-2 py-1 text-xs font-bold text-gray-700">
+                        #{group.last_publish_process_id}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">غير متاح</span>
                     )}
                   </td>
 

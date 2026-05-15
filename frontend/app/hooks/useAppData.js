@@ -51,7 +51,7 @@ export function useAppData() {
           active_groups: 0,
         }),
         fetchJson('/groups', []),
-        fetchJson('/posts?limit=20', []),
+        fetchJson('/posts?limit=1000', []),
         fetchJson('/bot/status', { is_running: false }),
       ]);
       setStats(statsData);
@@ -109,9 +109,11 @@ export function useAppData() {
         body: JSON.stringify({ force: false }),
       });
       if (!response.ok) throw new Error();
-      setBotStatus(prev => ({ ...(prev || {}), is_running: false }));
-      alert('✅ تم إيقاف البوت!');
-      fetchData();
+      const stoppedStatus = { is_running: false, active_publishes: 0, active_campaigns: 0 };
+      setBotStatus(prev => ({ ...(prev || {}), ...stoppedStatus }));
+      window.dispatchEvent(new Event('bot-status-changed'));
+      alert('✅ تم إيقاف كل عمليات النشر!');
+      setTimeout(fetchData, 500);
     } catch {
       alert('❌ تعذر إيقاف البوت');
     }

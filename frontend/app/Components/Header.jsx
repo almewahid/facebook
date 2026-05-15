@@ -4,13 +4,23 @@ import { Bell, Settings, Square } from 'lucide-react';
 
 export default function Header({ onSettings, onStopBot, botStatus, groupActionsMenu }) {
   const isRunning = botStatus?.is_running;
+  const activePublishes = botStatus?.active_publishes || 0;
+  const activeCampaigns = botStatus?.active_campaigns || 0;
+  const statusText = activePublishes > 0
+    ? 'النشر بمنشور جديد قيد التنفيذ'
+    : activeCampaigns > 0
+      ? 'حملة نشر قيد التنفيذ'
+      : isRunning
+        ? 'النشر التلقائي يعمل الآن'
+        : 'البوت متوقف';
+
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-gray-100 px-6 py-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
           <span className="text-xs text-gray-500 font-medium">
-            {isRunning ? 'النشر التلقائي يعمل الآن' : 'البوت متوقف'}
+            {statusText}
           </span>
         </div>
         <div className="flex items-center gap-2">

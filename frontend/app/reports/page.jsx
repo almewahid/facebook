@@ -4,6 +4,13 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_ORIGIN = API_URL.replace(/\/api\/v1\/?$/, '');
+
+function mediaSrc(path) {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  return `${API_ORIGIN}${path}`;
+}
 
 export default function ReportsPage() {
   const [posts, setPosts] = useState([]);
@@ -117,11 +124,23 @@ export default function ReportsPage() {
                         {post.id || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-semibold text-gray-900">{post.group?.name || post.group_name || `مجموعة ID: ${post.group_id}`}</div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {post.group_name || post.group?.name || `مجموعة ${post.group_id}`}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm text-gray-700 max-w-md truncate" title={post.content}>
-                          {post.content ? post.content.substring(0, 60) + (post.content.length > 60 ? '...' : '') : 'بدون نص'}
+                        <div className="flex items-center gap-3">
+                          {mediaSrc(post.image_url) && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={mediaSrc(post.image_url)}
+                              alt=""
+                              className="h-12 w-12 rounded-md border border-gray-100 object-cover"
+                            />
+                          )}
+                          <div className="text-sm text-gray-700 max-w-md truncate" title={post.content}>
+                            {post.content ? post.content.substring(0, 60) + (post.content.length > 60 ? '...' : '') : 'بدون نص'}
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">

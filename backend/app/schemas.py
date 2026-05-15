@@ -68,6 +68,10 @@ class GroupResponse(GroupBase):
     id: int
     url: Optional[str] = None
     category: Optional[str] = "عام"
+    last_posted_at: Optional[datetime] = None
+    last_post_minutes_ago: Optional[int] = None
+    last_post_url: Optional[str] = None
+    last_publish_process_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -93,6 +97,8 @@ class PostCreate(PostBase):
 
 class PostResponse(PostBase):
     id: int
+    group_name: Optional[str] = None
+    image_url: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -221,6 +227,8 @@ class BotStopResponse(BaseModel):
 
 class BotStatusResponse(BaseModel):
     is_running: bool
+    active_publishes: int = 0
+    active_campaigns: int = 0
     current_cycle: Optional[int] = None
     current_group: Optional[str] = None
     started_at: Optional[datetime] = None

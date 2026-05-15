@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
 from sqlalchemy import text
+from pathlib import Path
 
 from app.database import engine, Base
 from app.api.routers import groups, publish, campaigns, bot, stats_logs_config
@@ -24,6 +26,7 @@ def ensure_runtime_columns():
             "is_scheduled": "BOOLEAN DEFAULT 0",
             "scheduled_start_time": "DATETIME",
             "delay_minutes": "INTEGER DEFAULT 5",
+            "delay_max_minutes": "INTEGER DEFAULT 5",
         },
     }
 
@@ -39,6 +42,9 @@ def ensure_runtime_columns():
 
 
 ensure_runtime_columns()
+
+MEDIA_DIR = Path(__file__).resolve().parents[1] / "uploaded_media"
+MEDIA_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(
     title="Facebook Auto Poster API",
@@ -66,6 +72,7 @@ app.include_router(publish.router, prefix="/api/v1")
 app.include_router(campaigns.router, prefix="/api/v1")
 app.include_router(bot.router, prefix="/api/v1")
 app.include_router(stats_logs_config.router, prefix="/api/v1")
+app.mount("/uploaded_media", StaticFiles(directory=str(MEDIA_DIR)), name="uploaded_media")
 
 @app.on_event("startup")
 async def startup_event():

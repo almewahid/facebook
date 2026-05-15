@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 from typing import List
 import csv
 import io
@@ -9,6 +10,42 @@ from app.database import get_db
 from app import models, schemas
 
 router = APIRouter(prefix="/groups", tags=["groups"])
+
+
+def _minutes_since(dt):
+    if not dt:
+        return None
+    now = datetime.now(dt.tzinfo or timezone.utc)
+    if dt.tzinfo is None:
+        now = now.replace(tzinfo=None)
+    return max(0, int((now - dt).total_seconds() // 60))
+
+
+def _group_with_last_post(group: models.Group, db: Session):
+    last_post = (
+        db.query(models.Post)
+        .filter(
+            models.Post.group_id == group.id,
+            models.Post.status == "success",
+            models.Post.posted_at.isnot(None),
+        )
+        .order_by(models.Post.posted_at.desc(), models.Post.id.desc())
+        .first()
+    )
+
+    return {
+        "id": group.id,
+        "name": group.name,
+        "url": group.url,
+        "category": group.category,
+        "is_active": group.is_active,
+        "created_at": group.created_at,
+        "updated_at": group.updated_at,
+        "last_posted_at": last_post.posted_at if last_post else None,
+        "last_post_minutes_ago": _minutes_since(last_post.posted_at) if last_post else None,
+        "last_post_url": last_post.post_url if last_post else None,
+        "last_publish_process_id": last_post.cycle_number if last_post else None,
+    }
 
 
 @router.post("", response_model=schemas.GroupResponse, status_code=status.HTTP_201_CREATED)
@@ -30,7 +67,7 @@ def create_group(group: schemas.GroupCreate, db: Session = Depends(get_db)):
 def get_groups(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """الحصول على كل المجموعات"""
     groups = db.query(models.Group).order_by(models.Group.id.desc()).offset(skip).limit(limit).all()
-    return groups
+    return [_group_with_last_post(group, db) for group in groups]
 
 
 @router.get("/{group_id}", response_model=schemas.GroupResponse)
@@ -39,7 +76,7 @@ def get_group(group_id: int, db: Session = Depends(get_db)):
     group = db.query(models.Group).filter(models.Group.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="المجموعة غير موجودة")
-    return group
+    return _group_with_last_post(group, db)
 
 
 @router.put("/{group_id}", response_model=schemas.GroupResponse)
