@@ -14,8 +14,6 @@ import random
 from datetime import datetime, timedelta
 import os
 import logging
-import pyautogui
-import pyperclip
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from selenium.webdriver.common.by import By
@@ -102,7 +100,11 @@ class FacebookBot:
             or os.getenv('CHROME_PROFILE_FOLDER')
             or "Default"
         )
-        custom_user_data_path = r'C:\bot_chrome_data'
+        custom_user_data_path = (
+            self.config.get('chrome_user_data')
+            or os.getenv('CHROME_USER_DATA')
+            or (r'C:\bot_chrome_data' if os.name == "nt" else "/app/chrome_profile")
+        )
 
         if not os.path.exists(custom_user_data_path):
             os.makedirs(custom_user_data_path, exist_ok=True)
@@ -123,6 +125,9 @@ class FacebookBot:
         options.add_argument("--disable-extensions")
         options.add_argument("--remote-debugging-port=9222")
         options.add_argument("--log-level=3")
+        if os.getenv("CHROME_HEADLESS", "1" if os.name != "nt" else "0").lower() in ("1", "true", "yes"):
+            options.add_argument("--headless=new")
+            options.add_argument("--window-size=1366,768")
 
         prefs = {
             "profile.default_content_setting_values.notifications": 2,

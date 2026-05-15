@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+.env
+facebook_bot.db
+uploaded_media/
+chrome_profile/
+.pytest_cache/
