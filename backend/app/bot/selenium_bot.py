@@ -11,14 +11,16 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import logging
 import pyautogui
 import pyperclip
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
@@ -41,6 +43,9 @@ class FacebookBot:
         self.driver = None
         self.cycle_counter = 0
         self.db = SessionLocal()
+        self.safety_paused = False
+        self.posts_since_rest = 0
+        self.next_rest_after = None
 
     def __del__(self):
         if self.driver:
@@ -167,17 +172,132 @@ class FacebookBot:
         try:
             page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
             block_keywords = [
-                "محظور مؤقتاً", "أنت محظور", "تم حظرك",
+                "محظور مؤقتاً", "أنت محظور", "تم حظرك", "تم تقييد", "قيدنا",
+                "نشاط مريب", "تأكيد هويتك", "انتهاك معايير المجتمع",
                 "temporarily blocked", "you're temporarily blocked",
-                "blocked from", "you can't use this feature"
+                "blocked from", "you can't use this feature",
+                "account restricted", "confirm your identity", "suspicious activity",
+                "community standards", "we limit how often", "try again later"
             ]
             for keyword in block_keywords:
                 if keyword in page_text:
                     self.log_event("error", f"تم اكتشاف رسالة حظر: {keyword}")
+                    self._trigger_safety_pause(f"رسالة فيسبوك خطرة: {keyword}")
                     return True
             return False
         except Exception:
             return False
+
+    def _get_config_value(self, key: str, default=None):
+        try:
+            saved = self.db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+            if saved and saved.value not in (None, ""):
+                return saved.value
+        except Exception:
+            self.db.rollback()
+        return self.config.get(key.lower(), default)
+
+    def _get_config_int(self, key: str, default: int):
+        try:
+            return int(self._get_config_value(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    def _get_config_bool(self, key: str, default: bool = True):
+        value = self._get_config_value(key, str(default).lower())
+        return str(value).strip().lower() in ("1", "true", "yes", "on", "نعم")
+
+    def _set_config_value(self, key: str, value: str):
+        try:
+            saved = self.db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+            if saved:
+                saved.value = value
+            else:
+                self.db.add(models.BotConfig(key=key, value=value))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+
+    def _count_successful_posts_today(self):
+        start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            return self.db.query(models.Post).filter(
+                models.Post.status == "success",
+                models.Post.posted_at >= start_of_day
+            ).count()
+        except Exception:
+            self.db.rollback()
+            return 0
+
+    def _trigger_safety_pause(self, reason: str):
+        self.safety_paused = True
+        self._set_config_value("SAFETY_PAUSED", "true")
+        self._set_config_value("SAFETY_PAUSE_REASON", reason)
+        self.log_event(
+            "error",
+            "تم إيقاف النشر تلقائياً لحماية الحساب",
+            reason
+        )
+
+    def should_stop_for_safety(self):
+        if self.safety_paused:
+            return True
+        return self._get_config_bool("SAFETY_PAUSED", False)
+
+    def safety_gate(self, group_name: str = None):
+        if self.should_stop_for_safety():
+            return "النشر متوقف لحماية الحساب"
+
+        daily_limit = self._get_config_int("SAFETY_DAILY_POST_LIMIT", 10)
+        if daily_limit > 0 and self._count_successful_posts_today() >= daily_limit:
+            reason = f"تم الوصول للحد اليومي الآمن ({daily_limit} منشور)"
+            self._trigger_safety_pause(reason)
+            return reason
+
+        if self.driver and self._get_config_bool("SAFETY_STOP_ON_FACEBOOK_WARNING", True):
+            if self.check_if_blocked():
+                return "تم اكتشاف تحذير أو تقييد من فيسبوك"
+
+        return None
+
+    def apply_safe_delay(self, requested_seconds: int = 0):
+        min_safe_minutes = self._get_config_int("SAFETY_MIN_DELAY_MINUTES", 1)
+        min_safe_seconds = self._get_config_int("SAFETY_MIN_DELAY_SECONDS", min_safe_minutes * 60)
+        jitter = random.randint(30, 120)
+        wait_time = max(int(requested_seconds or 0), min_safe_seconds) + jitter
+        print(f"⏳ انتظار آمن {wait_time} ثانية...")
+        time.sleep(wait_time)
+
+    def _set_next_rest_threshold(self):
+        min_posts = self._get_config_int("SAFETY_REST_AFTER_MIN_POSTS", 8)
+        max_posts = self._get_config_int("SAFETY_REST_AFTER_MAX_POSTS", 12)
+        if max_posts < min_posts:
+            max_posts = min_posts
+        self.next_rest_after = random.randint(max(1, min_posts), max(1, max_posts))
+
+    def _rest_after_successful_post_if_needed(self):
+        self.posts_since_rest += 1
+        if self.next_rest_after is None:
+            self._set_next_rest_threshold()
+
+        if self.posts_since_rest < self.next_rest_after:
+            return
+
+        min_minutes = self._get_config_int("SAFETY_REST_MIN_MINUTES", 1)
+        max_minutes = self._get_config_int("SAFETY_REST_MAX_MINUTES", 3)
+        if max_minutes < min_minutes:
+            max_minutes = min_minutes
+
+        rest_seconds = random.randint(max(1, min_minutes), max(1, max_minutes)) * 60
+        self.log_event(
+            "info",
+            "راحة تلقائية لتخفيف السلوك الآلي",
+            f"posts_since_rest={self.posts_since_rest} | rest_seconds={rest_seconds}"
+        )
+        print(f"☕ راحة تلقائية {rest_seconds // 60} دقيقة لتخفيف السلوك الآلي...")
+        time.sleep(rest_seconds)
+        self.posts_since_rest = 0
+        self._set_next_rest_threshold()
 
     def scroll_to_posts(self):
         for i in range(3):
@@ -211,32 +331,220 @@ class FacebookBot:
 
         return group
 
+    def _normalize_facebook_group_url(self, url: str):
+        if not url or not url.strip().startswith("http"):
+            return None
+        try:
+            parts = urlsplit(url.strip())
+            safe_path = quote(parts.path, safe="/")
+            return urlunsplit((parts.scheme, parts.netloc, safe_path, parts.query, parts.fragment))
+        except Exception:
+            return url.strip()
+
+    def _find_and_save_group_url(self, group):
+        if not group or not group.name:
+            return None
+
+        search_url = f"https://www.facebook.com/search/groups/?q={quote(group.name)}"
+        print(f"🔎 لا يوجد رابط محفوظ. البحث عن المجموعة في فيسبوك: {group.name}")
+
+        try:
+            self.driver.get(search_url)
+            time.sleep(random.uniform(5, 8))
+
+            if self.check_if_blocked():
+                return None
+
+            anchors = self.driver.find_elements(By.XPATH, "//a[contains(@href, '/groups/')]")
+            for anchor in anchors:
+                try:
+                    text = (anchor.text or "").strip()
+                    href = anchor.get_attribute("href")
+                    if not href or "/groups/" not in href:
+                        continue
+                    if group.name in text or text in group.name:
+                        group_url = self._normalize_facebook_group_url(href.split("?")[0])
+                        if group_url:
+                            group.url = group_url
+                            self.db.commit()
+                            self.log_event(
+                                "info",
+                                f"تم العثور على رابط المجموعة وحفظه: {group.name}",
+                                group_url
+                            )
+                            return group_url
+                except Exception:
+                    continue
+        except Exception as e:
+            self.db.rollback()
+            self.log_event(
+                "warning",
+                f"تعذر البحث عن رابط المجموعة: {group.name}",
+                str(e)
+            )
+
+        return None
+
+    def _normalize_page_url(self):
+        page_url = (
+            self.config.get('page_url')
+            or os.getenv('PAGE_URL')
+            or 'https://web.facebook.com'
+        ).strip()
+        if not page_url.startswith(("http://", "https://")):
+            page_url = f"https://{page_url}"
+        return page_url
+
+    def _resolve_group_name(self, group_identifier: str):
+        if not group_identifier:
+            return group_identifier
+
+        value = group_identifier.strip()
+        if '/groups/' not in value:
+            return value
+
+        normalized = value.rstrip('/')
+        slug = normalized.split('/')[-1]
+        group = self.db.query(models.Group).filter(
+            (models.Group.url == value) |
+            (models.Group.url == normalized) |
+            (models.Group.url.contains(slug))
+        ).first()
+
+        return group.name if group else slug
+
+    def _page_has_transient_error(self):
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            error_markers = [
+                "شيء ما لا يعمل",
+                "مشكلة فنية",
+                "Something isn't working",
+                "technical problem",
+            ]
+            return any(marker in body_text for marker in error_markers)
+        except Exception:
+            return False
+
+    def _dismiss_transient_error(self):
+        try:
+            close_buttons = self.driver.find_elements(
+                By.XPATH,
+                "//div[contains(., 'شيء ما لا يعمل') or contains(., \"Something isn't working\")]"
+                "/ancestor::div[@role='alert' or @aria-live][1]//div[@role='button']"
+            )
+            if close_buttons:
+                self.driver.execute_script("arguments[0].click();", close_buttons[0])
+                time.sleep(random.uniform(0.8, 1.5))
+                return
+        except Exception:
+            pass
+
+        try:
+            self.driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+            time.sleep(random.uniform(0.8, 1.5))
+        except Exception:
+            pass
+
+    def _share_surface_is_open(self):
+        try:
+            return bool(self.driver.find_elements(
+                By.XPATH,
+                "//div[@role='dialog']"
+                " | //div[@role='menu']"
+                " | //div[@role='menuitem']//span[contains(text(), 'مجموعة')]"
+                " | //span[contains(text(), 'Group')]/ancestor::div[@role='button' or @role='menuitem']"
+            ))
+        except Exception:
+            return False
+
+    def _visible_element_key(self, element):
+        try:
+            rect = self.driver.execute_script(
+                """
+                const r = arguments[0].getBoundingClientRect();
+                return {
+                    x: Math.round(r.x),
+                    y: Math.round(r.y),
+                    width: Math.round(r.width),
+                    height: Math.round(r.height),
+                    visible: r.width > 0 && r.height > 0 &&
+                             r.bottom > 120 && r.top < window.innerHeight - 20
+                };
+                """,
+                element,
+            )
+            if not rect or not rect.get("visible"):
+                return None
+            return (rect["x"], rect["y"], rect["width"], rect["height"])
+        except Exception:
+            return None
+
+    def _click_element(self, element):
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+        time.sleep(random.uniform(0.5, 1))
+        try:
+            ActionChains(self.driver).move_to_element(element).pause(0.2).click().perform()
+        except Exception:
+            self.driver.execute_script("arguments[0].click();", element)
+
     # ──────────────────────────────────────────
     # 3. خطوات المشاركة (الطريقة الأولى)
     # ──────────────────────────────────────────
     def open_share_box_for_first_post(self):
         search_methods = [
-            (By.XPATH, "//div[@role='button' and contains(., 'مشاركة')]"),
-            (By.XPATH, "//span[contains(text(), 'مشاركة')]/ancestor::div[@role='button']"),
-            (By.XPATH, "//div[@role='button' and contains(., 'Share')]"),
+            (By.XPATH, "//div[@role='article']//div[@role='button'][.//span[normalize-space()='مشاركة']]"),
+            (By.XPATH, "//div[@role='article']//div[@role='button'][.//span[normalize-space()='Share']]"),
+            (By.XPATH, "//div[@role='article']//div[@role='button'][contains(@aria-label, 'مشاركة')]"),
+            (By.XPATH, "//div[@role='article']//div[@role='button'][contains(@aria-label, 'Share')]"),
+            (By.XPATH, "//span[normalize-space()='مشاركة']/ancestor::div[@role='button'][1]"),
+            (By.XPATH, "//span[normalize-space()='Share']/ancestor::div[@role='button'][1]"),
         ]
-        share_buttons = []
-        for by, xpath in search_methods:
-            try:
-                share_buttons = self.driver.find_elements(by, xpath)
-                if share_buttons:
-                    break
-            except Exception:
+        tried_positions = set()
+
+        for scroll_round in range(4):
+            share_buttons = []
+            for by, xpath in search_methods:
+                try:
+                    for btn in self.driver.find_elements(by, xpath):
+                        if not (btn.is_displayed() and btn.is_enabled()):
+                            continue
+                        button_key = self._visible_element_key(btn)
+                        if not button_key:
+                            continue
+                        if button_key not in tried_positions:
+                            share_buttons.append((button_key, btn))
+                except Exception:
+                    continue
+
+            if not share_buttons:
+                self.driver.execute_script("window.scrollBy(0, 650);")
+                time.sleep(random.uniform(2, 3))
                 continue
-        if not share_buttons:
-            return False
-        try:
-            time.sleep(random.uniform(1, 2))
-            self.driver.execute_script("arguments[0].click();", share_buttons[0])
-            time.sleep(random.uniform(2, 4))
-            return True
-        except Exception:
-            return False
+
+            for button_key, share_button in share_buttons[:4]:
+                tried_positions.add(button_key)
+                try:
+                    time.sleep(random.uniform(1, 2))
+                    self._click_element(share_button)
+                    time.sleep(random.uniform(2, 4))
+
+                    if self._share_surface_is_open():
+                        return True
+
+                    if self._page_has_transient_error():
+                        self._dismiss_transient_error()
+                        continue
+
+                    self._dismiss_transient_error()
+                except Exception:
+                    self._dismiss_transient_error()
+                    continue
+
+            self.driver.execute_script("window.scrollBy(0, 650);")
+            time.sleep(random.uniform(2, 3))
+
+        return False
 
     def select_share_to_group(self):
         wait = WebDriverWait(self.driver, 15)
@@ -336,22 +644,43 @@ class FacebookBot:
     # ──────────────────────────────────────────
     def post_to_group(self, group_identifier: str, cycle_number: int):
         start_time = time.time()
-        if '/groups/' in group_identifier:
-            group_name = group_identifier.rstrip('/').split('/')[-1]
-        else:
-            group_name = group_identifier
+        group_name = self._resolve_group_name(group_identifier)
 
         try:
-            self.driver.get(self.config['page_url'])
-            time.sleep(random.uniform(5, 8))
+            safety_reason = self.safety_gate(group_name)
+            if safety_reason:
+                return self.save_post_result(
+                    group_name, cycle_number, "skipped",
+                    safety_reason, None, time.time() - start_time
+                )
 
-            if self.check_if_blocked():
-                return self.save_post_result(group_name, cycle_number, "failed", "تم اكتشاف حظر", None, time.time() - start_time)
+            page_url = self._normalize_page_url()
+            for attempt in range(2):
+                self.driver.get(page_url)
+                time.sleep(random.uniform(5, 8))
 
-            self.scroll_to_posts()
+                if self._page_has_transient_error():
+                    self.driver.refresh()
+                    time.sleep(random.uniform(4, 6))
 
-            if not self.open_share_box_for_first_post():
-                return self.save_post_result(group_name, cycle_number, "failed", "زر المشاركة مفقود", None, time.time() - start_time)
+                if self.check_if_blocked():
+                    return self.save_post_result(group_name, cycle_number, "failed", "تم اكتشاف حظر", None, time.time() - start_time)
+
+                self.scroll_to_posts()
+
+                if self.open_share_box_for_first_post():
+                    break
+
+                if attempt == 1:
+                    self.log_event(
+                        "error",
+                        "فشل فتح نافذة مشاركة صالحة من صفحة فيسبوك",
+                        f"page_url={page_url}"
+                    )
+                    return self.save_post_result(group_name, cycle_number, "failed", "زر المشاركة مفقود أو ظهرت مشكلة في فيسبوك", None, time.time() - start_time)
+
+                self.driver.refresh()
+                time.sleep(random.uniform(4, 6))
 
             if not self.select_share_to_group():
                 return self.save_post_result(group_name, cycle_number, "failed", "خيار المجموعة مفقود", None, time.time() - start_time)
@@ -366,12 +695,30 @@ class FacebookBot:
                 ))
             )
             time.sleep(random.uniform(1, 2))
+
+            safety_reason = self.safety_gate(group_name)
+            if safety_reason:
+                return self.save_post_result(
+                    group_name, cycle_number, "skipped",
+                    safety_reason, None, time.time() - start_time
+                )
+
             post_button.click()
             time.sleep(random.uniform(4, 6))
 
+            if self.check_if_blocked():
+                return self.save_post_result(
+                    group_name, cycle_number, "failed",
+                    "تم اكتشاف تحذير من فيسبوك بعد محاولة النشر",
+                    None, time.time() - start_time
+                )
+
             post_url = self.driver.current_url
             print(f"✅ تم النشر بنجاح في: {group_name}")
-            return self.save_post_result(group_name, cycle_number, "success", None, post_url, time.time() - start_time)
+            saved_post = self.save_post_result(group_name, cycle_number, "success", None, post_url, time.time() - start_time)
+            if saved_post:
+                self._rest_after_successful_post_if_needed()
+            return saved_post
 
         except Exception as e:
             print(f"❌ خطأ في النشر: {e}")
@@ -443,6 +790,10 @@ class FacebookBot:
         max_groups = self.config.get('max_groups_per_session', 7)
 
         for i, group in enumerate(groups[:max_groups], 1):
+            if self.should_stop_for_safety():
+                print("🛑 تم إيقاف الدورة لحماية الحساب")
+                break
+
             print(f"\n[{i}/{min(len(groups), max_groups)}] النشر في: {group.name}")
             group_identifier = group.url if group.url else group.name
 
@@ -467,8 +818,7 @@ class FacebookBot:
                     self.config.get('min_delay_between_groups', 60),
                     self.config.get('max_delay_between_groups', 120)
                 )
-                print(f"⏳ انتظار {wait_time} ثانية...")
-                time.sleep(wait_time)
+                self.apply_safe_delay(wait_time)
 
         print(f"\n{'='*70}")
         print(f"✅ انتهت الدورة رقم {self.cycle_counter}")
@@ -510,6 +860,18 @@ class FacebookBot:
     def post_new_content_to_group(self, group_name: str, text: str, publish_post_id: int = 0, image_path: str = None):
         """ينشر محتوى جديد مباشرة في صفحة المجموعة"""
         start_time = time.time()
+
+        safety_reason = self.safety_gate(group_name)
+        if safety_reason:
+            return self.save_post_result(
+                group_name,
+                publish_post_id,
+                "skipped",
+                safety_reason,
+                None,
+                time.time() - start_time,
+                text=text
+            )
         
         # التأكد من أن المتصفح يعمل ولم يتم إغلاقه
         try:
@@ -529,10 +891,18 @@ class FacebookBot:
                 print(f"❌ المجموعة غير موجودة في DB: {group_name}")
                 return None
 
-            if group.url and group.url.startswith('http'):
-                group_url = group.url
-            else:
-                group_url = f"https://www.facebook.com/groups/{group_name}"
+            group_url = self._normalize_facebook_group_url(group.url) or self._find_and_save_group_url(group)
+            if not group_url:
+                print(f"❌ لا يوجد رابط صحيح محفوظ للمجموعة: {group_name}")
+                return self.save_post_result(
+                    group_name,
+                    publish_post_id,
+                    "failed",
+                    "رابط المجموعة غير محفوظ ولم يتم العثور عليه في بحث فيسبوك",
+                    None,
+                    time.time() - start_time,
+                    text=text
+                )
 
             print(f"🌐 الذهاب لصفحة المجموعة: {group_url}")
             self.driver.get(group_url)
@@ -775,10 +1145,33 @@ class FacebookBot:
 
                 time.sleep(3)
 
+                safety_reason = self.safety_gate(group_name)
+                if safety_reason:
+                    return self.save_post_result(
+                        group_name,
+                        publish_post_id,
+                        "skipped",
+                        safety_reason,
+                        None,
+                        time.time() - start_time,
+                        text=text
+                    )
+
                 self.driver.execute_script("arguments[0].click();", post_button)
 
                 print("🚀 تم الضغط على زر النشر...")
                 time.sleep(8)
+
+                if self.check_if_blocked():
+                    return self.save_post_result(
+                        group_name,
+                        publish_post_id,
+                        "failed",
+                        "تم اكتشاف تحذير من فيسبوك بعد محاولة النشر",
+                        None,
+                        time.time() - start_time,
+                        text=text
+                    )
                 
                 # التحقق من حالة المنشور (نجاح أم قيد الانتظار)
                 is_pending = False
@@ -797,7 +1190,7 @@ class FacebookBot:
 
                 if is_pending:
                     print("✅ منشورك قيد الانتظار لموافقة المسؤول (يعد نجاحاً)")
-                    return self.save_post_result(
+                    saved_post = self.save_post_result(
                         group_name,
                         publish_post_id,
                         "success",
@@ -806,9 +1199,12 @@ class FacebookBot:
                         time.time() - start_time,
                         text=text
                     )
+                    if saved_post:
+                        self._rest_after_successful_post_if_needed()
+                    return saved_post
                 else:
                     print("🚀 تم النشر بنجاح")
-                    return self.save_post_result(
+                    saved_post = self.save_post_result(
                         group_name,
                         publish_post_id,
                         "success",
@@ -817,6 +1213,9 @@ class FacebookBot:
                         time.time() - start_time,
                         text=text
                     )
+                    if saved_post:
+                        self._rest_after_successful_post_if_needed()
+                    return saved_post
 
             except Exception as e:
                 print(f"❌ خطأ أثناء النشر: {e}")

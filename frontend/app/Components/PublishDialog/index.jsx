@@ -1,14 +1,17 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { X, Send } from 'lucide-react';
+import { X, Share2, FilePlus2 } from 'lucide-react';
 import PublishForm from './PublishForm';
 import PublishProgress from './PublishProgress';
 import PublishResults from './PublishResults';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
-export default function PublishDialog({ show, onClose, onSuccess, existingCategories = [] }) {
+export default function PublishDialog({ show, onClose, onSuccess, existingCategories = [], publishMethod = 'new_post' }) {
+  const isSharePageMethod = publishMethod === 'share_page';
+  const methodTitle = isSharePageMethod ? 'مشاركة منشور من الصفحة' : 'النشر بمنشور جديد';
+  const MethodIcon = isSharePageMethod ? Share2 : FilePlus2;
   // ===== حالة المنشور =====
   const [text, setText] = useState('');
   const [images, setImages] = useState([]);
@@ -27,9 +30,9 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
   const [isScheduled, setIsScheduled] = useState(false);
   const [publishMode, setPublishMode] = useState('now');
   const [startTime, setStartTime] = useState('');
-  const [delayMin, setDelayMin] = useState(3);
-  const [delayMax, setDelayMax] = useState(8);
-  const [scheduleTimes, setScheduleTimes] = useState(['09:00', '15:00', '21:00']);
+  const [delayMin, setDelayMin] = useState(1);
+  const [delayMax, setDelayMax] = useState(12);
+  const [scheduleTimes, setScheduleTimes] = useState(['09:00']);
   const [newScheduleTime, setNewScheduleTime] = useState('');
   const [restDays, setRestDays] = useState([]);
   const [isRotation, setIsRotation] = useState(false);
@@ -46,10 +49,11 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
   useEffect(() => {
     if (show) {
       fetchGroups();
+      setIsScheduled(true);
     } else {
       clearInterval(pollRef.current);
     }
-  }, [show]);
+  }, [show, publishMethod]);
 
   // ===== جلب المجموعات =====
   const fetchGroups = async () => {
@@ -74,8 +78,8 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
 
   // ===== النشر =====
   const handlePublish = async () => {
-    if (!text.trim()) { setError('الرجاء كتابة نص المنشور'); return; }
     if (targetGroups.length === 0) { setError('لا توجد مجموعات نشطة'); return; }
+    if (!isSharePageMethod && !text.trim()) { setError('الرجاء كتابة نص المنشور'); return; }
     if (isRotation && !secondText.trim()) { setError('اكتب نص المنشور الثاني لتفعيل التبديل'); return; }
     // منع الجمع بين فيديو مرفوع ورابط فيديو
     if (video && videoUrl.trim()) { setError('لا يمكن استخدام فيديو مرفوع ورابط فيديو معاً. اختر أحدهما فقط.'); return; }
@@ -86,10 +90,10 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
     pollCountRef.current = 0;
 
     try {
-      const isCampaign = isScheduled || isRotation;
+      const isCampaign = isSharePageMethod || isScheduled || isRotation;
 
       if (isCampaign) {
-        if (video) {
+        if (!isSharePageMethod && video) {
           throw new Error('الفيديو كملف غير مدعوم في الجدولة حالياً. أضف رابط الفيديو داخل النص أو استخدم النشر الفوري.');
         }
 
@@ -102,7 +106,8 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
         const campaignData = {
           name: `حملة ${new Date().toLocaleString('ar-EG')}`,
           group_ids: targetGroups.map(g => g.id),
-          texts: textsWithVideoUrl,
+          texts: isSharePageMethod ? [] : textsWithVideoUrl,
+          publish_method: publishMethod,
           start_time: (isScheduled && publishMode === 'scheduled' && startTime)
             ? startTime
             : null,
@@ -113,16 +118,19 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
         };
 
         let res;
-        if (images.length > 0) {
+        if (!isSharePageMethod && images.length > 0) {
           const campaignForm = new FormData();
           campaignForm.append('name', campaignData.name);
           campaignForm.append('texts', JSON.stringify(campaignData.texts));
+          campaignForm.append('publish_method', campaignData.publish_method);
           campaignData.group_ids.forEach(id => campaignForm.append('group_ids', id));
           if (campaignData.start_time) {
             campaignForm.append('start_time', campaignData.start_time);
           }
           campaignForm.append('delay_between_posts', campaignData.delay_between_posts);
           campaignForm.append('rotation_strategy', campaignData.rotation_strategy);
+          campaignForm.append('schedule_times', JSON.stringify(campaignData.schedule_times));
+          campaignForm.append('rest_days', JSON.stringify(campaignData.rest_days));
           images.forEach(img => campaignForm.append('images', img.file));
           res = await fetch(`${API_URL}/campaigns/media`, { method: 'POST', body: campaignForm });
         } else {
@@ -158,6 +166,7 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
 
       const formData = new FormData();
       formData.append('text', textWithVideoUrl);
+      formData.append('publish_method', publishMethod);
       targetGroups.forEach(g => formData.append('group_ids', g.id));
       images.forEach(img => formData.append('images', img.file));
       if (video) formData.append('video', video.file);
@@ -239,6 +248,7 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
     if (video) URL.revokeObjectURL(video.preview);
     setText(''); setImages([]); setVideo(null); setVideoUrl('');
     setVideoUrlText('🎥 لمشاهدة الفيديو، اضغط على الرابط التالي: 👇');
+    setIsScheduled(true); setPublishMode('now');
     setStep('form'); setPostId(null); setProgress(null);
     setResults([]); setError('');
     onClose();
@@ -255,9 +265,9 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Send className="w-4 h-4 text-white" />
+              <MethodIcon className="w-4 h-4 text-white" />
             </div>
-            <h2 className="text-lg font-bold text-gray-900">نشر منشور جديد</h2>
+            <h2 className="text-lg font-bold text-gray-900">{methodTitle}</h2>
           </div>
           <button onClick={handleClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-500" />
@@ -286,6 +296,7 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
             restDays={restDays} setRestDays={setRestDays}
             isRotation={isRotation} setIsRotation={setIsRotation}
             secondText={secondText} setSecondText={setSecondText}
+            publishMethod={publishMethod}
             error={error}
             onClose={handleClose}
             onPublish={handlePublish}

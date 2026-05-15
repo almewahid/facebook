@@ -1,9 +1,10 @@
 'use client';
 
+import Image from 'next/image';
 import { useRef } from 'react';
 import {
   Send, Image as ImageIcon, Video, FileText,
-  List, Link, XCircle, X, Loader2, Plus, Trash2
+  List, Link, XCircle, X, Loader2, Plus, Trash2, Share2
 } from 'lucide-react';
 
 export default function PublishForm({
@@ -30,6 +31,7 @@ export default function PublishForm({
   restDays, setRestDays,
   isRotation, setIsRotation,
   secondText, setSecondText,
+  publishMethod,
   // خطأ وإجراءات
   error,
   onClose,
@@ -37,6 +39,25 @@ export default function PublishForm({
 }) {
   const imageInputRef = useRef();
   const videoInputRef = useRef();
+  const isSharePageMethod = publishMethod === 'share_page';
+  const weekDays = [
+    { k: 'sun', l: 'الأحد' },
+    { k: 'mon', l: 'الاثنين' },
+    { k: 'tue', l: 'الثلاثاء' },
+    { k: 'wed', l: 'الأربعاء' },
+    { k: 'thu', l: 'الخميس' },
+    { k: 'fri', l: 'الجمعة' },
+    { k: 'sat', l: 'السبت' },
+  ];
+  const activePublishDays = weekDays.filter(d => !restDays.includes(d.k));
+
+  const togglePublishDay = (dayKey) => {
+    setRestDays(prev => (
+      prev.includes(dayKey)
+        ? prev.filter(k => k !== dayKey)
+        : [...prev, dayKey]
+    ));
+  };
 
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
@@ -104,21 +125,32 @@ export default function PublishForm({
             )}
           </div>
 
-          {/* نص المنشور */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-              <FileText className="w-4 h-4 text-blue-500" />
-              نص المنشور *
-            </label>
-            <textarea
-              value={text}
-              onChange={e => setText(e.target.value)}
-              rows={5}
-              placeholder="اكتب نص المنشور هنا..."
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <div className="text-xs text-gray-400 text-left mt-1">{text.length} حرف</div>
-          </div>
+          {isSharePageMethod ? (
+            <div className="p-4 bg-purple-50 border border-purple-100 rounded-xl">
+              <label className="flex items-center gap-2 text-sm font-bold text-purple-900 mb-2">
+                <Share2 className="w-4 h-4 text-purple-600" />
+                مشاركة منشور من الصفحة
+              </label>
+              <p className="text-xs text-purple-700 leading-relaxed">
+                سيتم استخدام رابط الصفحة المحفوظ في الإعدادات، ثم مشاركة منشور الصفحة داخل المجموعات المختارة حسب الجدولة التي تحددها هنا.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                <FileText className="w-4 h-4 text-blue-500" />
+                نص المنشور *
+              </label>
+              <textarea
+                value={text}
+                onChange={e => setText(e.target.value)}
+                rows={5}
+                placeholder="اكتب نص المنشور هنا..."
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <div className="text-xs text-gray-400 text-left mt-1">{text.length} حرف</div>
+            </div>
+          )}
 
           {/* ⚙️ خيارات الجدولة والتبديل */}
           <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100 space-y-4">
@@ -227,7 +259,7 @@ export default function PublishForm({
                     <div className="flex justify-between text-xs text-gray-500 mb-1">
                       <span>الحد الأدنى</span><span>{delayMin} دقيقة</span>
                     </div>
-                    <input type="range" min={1} max={59} value={delayMin}
+                    <input type="range" min={1} max={119} value={delayMin}
                       onChange={e => { const v = Number(e.target.value); setDelayMin(v); if (v >= delayMax) setDelayMax(v + 1); }}
                       className="w-full accent-indigo-500" />
                   </div>
@@ -235,45 +267,43 @@ export default function PublishForm({
                     <div className="flex justify-between text-xs text-gray-500 mb-1">
                       <span>الحد الأقصى</span><span>{delayMax} دقيقة</span>
                     </div>
-                    <input type="range" min={2} max={60} value={delayMax}
+                    <input type="range" min={2} max={120} value={delayMax}
                       onChange={e => { const v = Number(e.target.value); setDelayMax(v); if (v <= delayMin) setDelayMin(v - 1); }}
                       className="w-full accent-indigo-600" />
                   </div>
                 </div>
 
-                {/* أيام الراحة */}
+                {/* أيام النشر */}
                 <div>
-                  <label className="text-xs font-semibold text-gray-700 block mb-2">🌙 أيام الراحة (لا ينشر فيها)</label>
+                  <label className="text-xs font-semibold text-gray-700 block mb-2">📅 أيام النشر</label>
                   <div className="grid grid-cols-4 gap-1.5">
-                    {[
-                      { k: 'sun', l: 'الأحد' }, { k: 'mon', l: 'الاثنين' }, { k: 'tue', l: 'الثلاثاء' },
-                      { k: 'wed', l: 'الأربعاء' }, { k: 'thu', l: 'الخميس' }, { k: 'fri', l: 'الجمعة' }, { k: 'sat', l: 'السبت' }
-                    ].map(d => (
+                    {weekDays.map(d => (
                       <button key={d.k}
-                        onClick={() => setRestDays(prev => prev.includes(d.k) ? prev.filter(x => x !== d.k) : [...prev, d.k])}
+                        onClick={() => togglePublishDay(d.k)}
                         className={`py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                          restDays.includes(d.k)
+                          !restDays.includes(d.k)
                             ? 'bg-purple-600 text-white border-purple-600'
-                            : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-purple-300 hover:text-purple-600'
+                            : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-purple-300 hover:text-purple-600'
                         }`}
                       >
                         {d.l}
                       </button>
                     ))}
                   </div>
+                  <p className="text-[10px] text-gray-400 mt-2">
+                    الأيام المظللة هي التي سيتم النشر فيها فقط.
+                  </p>
                 </div>
 
                 {/* ملخص الجدول */}
                 <div className="bg-gradient-to-l from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-3">
                   <p className="text-xs font-semibold text-blue-800 mb-1">📋 ملخص الجدول</p>
                   <p className="text-xs text-gray-600">
-                    ينشر <span className="font-bold text-blue-700">{scheduleTimes.length} مرة</span> يومياً
-                    {restDays.length > 0 && restDays.length < 7 && (
-                      <> — يستريح {['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
-                        .filter((_, i) => restDays.includes(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][i]))
-                        .join('، ')}</>
+                    ينشر <span className="font-bold text-blue-700">{scheduleTimes.length} مرة</span>
+                    {activePublishDays.length > 0 && (
+                      <> في <span className="font-bold text-blue-700">{activePublishDays.map(d => d.l).join('، ')}</span></>
                     )}
-                    {restDays.length === 7 && <> — ⚠️ كل الأيام محددة كراحة!</>}
+                    {activePublishDays.length === 0 && <> — ⚠️ لم يتم اختيار أي يوم نشر</>}
                     {' '}— فاصل عشوائي <span className="font-bold text-blue-700">{delayMin}–{delayMax} دقيقة</span>
                   </p>
                 </div>
@@ -281,6 +311,7 @@ export default function PublishForm({
             )}
 
             {/* التبديل بين منشورين */}
+            {!isSharePageMethod && (
             <div className="pt-2 border-t border-blue-100">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -300,9 +331,11 @@ export default function PublishForm({
                 />
               )}
             </div>
+            )}
           </div>
 
           {/* الصور */}
+          {!isSharePageMethod && (
           <div>
             <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
               <ImageIcon className="w-4 h-4 text-green-500" />
@@ -312,7 +345,14 @@ export default function PublishForm({
               <div className="flex flex-wrap gap-2 mb-3">
                 {images.map((img, i) => (
                   <div key={i} className="relative group w-20 h-20">
-                    <img src={img.preview} alt="" className="w-full h-full object-cover rounded-lg border border-gray-200" />
+                    <Image
+                      src={img.preview}
+                      alt=""
+                      width={80}
+                      height={80}
+                      unoptimized
+                      className="w-full h-full object-cover rounded-lg border border-gray-200"
+                    />
                     <button onClick={() => removeImage(i)} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <X className="w-3 h-3 text-white" />
                     </button>
@@ -325,8 +365,10 @@ export default function PublishForm({
             </button>
             <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageChange} />
           </div>
+          )}
 
           {/* الفيديو */}
+          {!isSharePageMethod && (
           <div>
             <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
               <Video className="w-4 h-4 text-purple-500" />
@@ -347,8 +389,10 @@ export default function PublishForm({
             )}
             <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoChange} />
           </div>
+          )}
 
           {/* رابط الفيديو */}
+          {!isSharePageMethod && (
           <div className="space-y-3">
             <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
               <Link className="w-4 h-4 text-indigo-500" />
@@ -387,6 +431,7 @@ export default function PublishForm({
               )}
             </div>
           </div>
+          )}
 
           {/* رسالة الخطأ */}
           {error && (
@@ -404,11 +449,11 @@ export default function PublishForm({
         </button>
         <button
           onClick={onPublish}
-          disabled={!text.trim() || targetGroups.length === 0}
+          disabled={(!isSharePageMethod && !text.trim()) || targetGroups.length === 0}
           className="flex-1 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <Send className="w-4 h-4" />
-          نشر في {targetGroups.length} مجموعة
+          {isSharePageMethod ? 'متابعة مشاركة منشور الصفحة' : `نشر في ${targetGroups.length} مجموعة`}
         </button>
       </div>
     </>

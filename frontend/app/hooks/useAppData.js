@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 const CATEGORIES_STORAGE_KEY = 'fb_poster_extra_categories';
@@ -27,31 +27,53 @@ export function useAppData() {
   const categoriesFromGroups = [...new Set(groups.map(g => g.category).filter(Boolean))];
   const existingCategories = [...new Set([...categoriesFromGroups, ...manualCategories])];
 
-  // ===== Data fetching =====
-  const fetchData = async () => {
+  const fetchJson = useCallback(async (path, fallback) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const [statsRes, groupsRes, postsRes, statusRes] = await Promise.all([
-        fetch(`${API_URL}/stats`),
-        fetch(`${API_URL}/groups`),
-        fetch(`${API_URL}/posts?limit=20`),
-        fetch(`${API_URL}/bot/status`),
+      const response = await fetch(`${API_URL}${path}`, { signal: controller.signal });
+      if (!response.ok) return fallback;
+      return await response.json();
+    } catch {
+      return fallback;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }, []);
+
+  // ===== Data fetching =====
+  const fetchData = useCallback(async () => {
+    try {
+      const [statsData, groupsData, postsData, statusData] = await Promise.all([
+        fetchJson('/stats', {
+          total_posts: 0,
+          successful_posts: 0,
+          active_groups: 0,
+        }),
+        fetchJson('/groups', []),
+        fetchJson('/posts?limit=20', []),
+        fetchJson('/bot/status', { is_running: false }),
       ]);
-      setStats(await statsRes.json());
-      setGroups(await groupsRes.json());
-      setPosts(await postsRes.json());
-      setBotStatus(await statusRes.json());
-      setLoading(false);
+      setStats(statsData);
+      setGroups(Array.isArray(groupsData) ? groupsData : []);
+      setPosts(Array.isArray(postsData) ? postsData : []);
+      setBotStatus(statusData || { is_running: false });
     } catch (error) {
       console.error('خطأ:', error);
+    } finally {
       setLoading(false);
     }
-  };
+  }, [fetchJson]);
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    window.addEventListener('bot-status-changed', fetchData);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('bot-status-changed', fetchData);
+    };
+  }, [fetchData]);
 
   // ===== Bot controls =====
   const startBot = async (scheduleConfig = null) => {
@@ -81,11 +103,17 @@ export function useAppData() {
 
   const stopBot = async () => {
     try {
-      await fetch(`${API_URL}/bot/stop`, { method: 'POST' });
+      const response = await fetch(`${API_URL}/bot/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: false }),
+      });
+      if (!response.ok) throw new Error();
+      setBotStatus(prev => ({ ...(prev || {}), is_running: false }));
       alert('✅ تم إيقاف البوت!');
-      setTimeout(fetchData, 1500);
+      fetchData();
     } catch {
-      alert('❌ خطأ');
+      alert('❌ تعذر إيقاف البوت');
     }
   };
 

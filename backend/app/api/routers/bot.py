@@ -32,7 +32,7 @@ def start_bot(request: schemas.BotStartRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/stop", response_model=schemas.BotStopResponse)
-def stop_bot(request: schemas.BotStopRequest, db: Session = Depends(get_db)):
+def stop_bot(request: schemas.BotStopRequest = schemas.BotStopRequest(), db: Session = Depends(get_db)):
     if bot_scheduler:
         bot_scheduler.stop()
 
@@ -59,6 +59,44 @@ def get_bot_status(db: Session = Depends(get_db)):
         started_at=None,
         last_activity=last_post.created_at if last_post else None
     )
+
+
+@router.get("/safety-status")
+def get_safety_status(db: Session = Depends(get_db)):
+    paused = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_PAUSED").first()
+    reason = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_PAUSE_REASON").first()
+    daily_limit = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_DAILY_POST_LIMIT").first()
+
+    return {
+        "paused": bool(paused and str(paused.value).lower() == "true"),
+        "reason": reason.value if reason else None,
+        "daily_limit": int(daily_limit.value) if daily_limit and str(daily_limit.value).isdigit() else 10,
+    }
+
+
+@router.post("/safety-reset")
+def reset_safety_pause(db: Session = Depends(get_db)):
+    for key, value in {
+        "SAFETY_PAUSED": "false",
+        "SAFETY_PAUSE_REASON": "",
+    }.items():
+        db_config = db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+        if db_config:
+            db_config.value = value
+        else:
+            db.add(models.BotConfig(key=key, value=value))
+
+    db.add(models.BotLog(
+        level="info",
+        message="تم إلغاء الإيقاف الآمن يدوياً",
+        details="راجع الحساب على فيسبوك قبل إعادة التشغيل"
+    ))
+    db.commit()
+
+    if bot_scheduler and bot_scheduler.bot:
+        bot_scheduler.bot.safety_paused = False
+
+    return {"status": "success", "message": "تم إلغاء الإيقاف الآمن"}
 
 
 @router.post("/logout")

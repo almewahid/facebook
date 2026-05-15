@@ -58,11 +58,15 @@ class PublishPost(Base):
     text              = Column(Text, nullable=False)
     image_paths       = Column(Text, nullable=True)   # مسارات الصور مفصولة بفاصلة
     video_path        = Column(String, nullable=True)
+    publish_method    = Column(String, default="new_post")
     status            = Column(String, default="pending")  # pending | publishing | done | failed
     total_groups      = Column(Integer, default=0)
     success_count     = Column(Integer, default=0)
     failed_count      = Column(Integer, default=0)
     target_group_ids  = Column(Text, nullable=True)
+    is_scheduled      = Column(Boolean, default=False)
+    scheduled_start_time = Column(DateTime, nullable=True)
+    delay_minutes     = Column(Integer, default=5)
     created_at        = Column(DateTime, default=datetime.utcnow)
     published_at      = Column(DateTime, nullable=True)
 
@@ -141,6 +145,7 @@ class Campaign(Base):
     name                = Column(String, nullable=False)
     status              = Column(String, default="draft")  # draft, active, paused, completed
     post_ids            = Column(Text, nullable=True)      # JSON: [1, 2]
+    publish_method      = Column(String, default="new_post")
     rotation_strategy   = Column(String, default="sequential")  # sequential, random
     schedule_plan       = Column(Text, nullable=True)
     delay_between_posts = Column(Integer, default=5)       # بالدقائق

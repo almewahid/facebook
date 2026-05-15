@@ -2,11 +2,43 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
+from sqlalchemy import text
 
 from app.database import engine, Base
 from app.api.routers import groups, publish, campaigns, bot, stats_logs_config
 
 Base.metadata.create_all(bind=engine)
+
+
+def ensure_runtime_columns():
+    """إضافة أعمدة صغيرة مطلوبة عند تشغيل SQLite قديم بدون Alembic."""
+    if engine.dialect.name != "sqlite":
+        return
+
+    required_columns = {
+        "campaigns": {
+            "publish_method": "VARCHAR DEFAULT 'new_post'",
+        },
+        "publish_posts": {
+            "publish_method": "VARCHAR DEFAULT 'new_post'",
+            "is_scheduled": "BOOLEAN DEFAULT 0",
+            "scheduled_start_time": "DATETIME",
+            "delay_minutes": "INTEGER DEFAULT 5",
+        },
+    }
+
+    with engine.begin() as conn:
+        for table_name, columns in required_columns.items():
+            existing = {
+                row[1]
+                for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+            }
+            for column_name, ddl in columns.items():
+                if column_name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
+
+
+ensure_runtime_columns()
 
 app = FastAPI(
     title="Facebook Auto Poster API",
@@ -17,8 +49,13 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-    "https://facebook-ten-lac.vercel.app",
-    "http://localhost:3000"],
+        "https://facebook-ten-lac.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

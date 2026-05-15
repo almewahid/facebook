@@ -179,15 +179,21 @@ class StatsResponse(BaseModel):
 class CampaignCreate(BaseModel):
     name: str
     post_ids: Optional[List[int]] = None
+    texts: Optional[List[str]] = None
     group_ids: List[int]
+    publish_method: str = "new_post"
     rotation_strategy: str = "sequential"
+    start_time: Optional[datetime] = None
+    schedule_times: Optional[List[str]] = None
+    rest_days: Optional[List[str]] = None
     delay_between_posts: int = 5
-    created_by: str  # إلزامية بناءً على models.py المحدث
+    created_by: Optional[str] = "admin@example.com"
 
 class CampaignResponse(BaseModel):
     id: int
     name: str
     status: str
+    publish_method: str = "new_post"
     sent_count: int
     total_groups: int
     created_at: datetime

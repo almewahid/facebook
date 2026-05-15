@@ -94,6 +94,15 @@ export default function SettingsDialog({ show, onClose }) {
   const [selectedProfile, setSelectedProfile] = useState('');
   const [loadingProfiles, setLoadingProfiles] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [safetySettings, setSafetySettings] = useState({
+    SAFETY_MIN_DELAY_MINUTES: '1',
+    SAFETY_DAILY_POST_LIMIT: '10',
+    SAFETY_REST_AFTER_MIN_POSTS: '8',
+    SAFETY_REST_AFTER_MAX_POSTS: '12',
+    SAFETY_REST_MIN_MINUTES: '1',
+    SAFETY_REST_MAX_MINUTES: '3',
+  });
+  const [savingSafety, setSavingSafety] = useState(false);
 
   // تحميل البيانات عند فتح النافذة
   useEffect(() => {
@@ -124,6 +133,15 @@ export default function SettingsDialog({ show, onClose }) {
 
       const savedProfile = configs.find(c => c.key === 'CHROME_PROFILE');
       if (savedProfile) setSelectedProfile(savedProfile.value);
+
+      setSafetySettings(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(key => {
+          const item = configs.find(c => c.key === key);
+          if (item?.value) next[key] = item.value;
+        });
+        return next;
+      });
     } catch (err) {
       console.error('خطأ في تحميل الإعدادات من السيرفر');
     }
@@ -184,6 +202,41 @@ export default function SettingsDialog({ show, onClose }) {
       setMessage({ type: 'error', text: '❌ خطأ في الاتصال' });
     }
     setSavingProfile(false);
+  };
+
+  const updateSafetySetting = (key, value) => {
+    const cleanValue = String(Math.max(1, Number(value) || 1));
+    setSafetySettings(prev => ({ ...prev, [key]: cleanValue }));
+  };
+
+  const saveSafetySettings = async () => {
+    const normalized = {
+      ...safetySettings,
+      SAFETY_REST_AFTER_MAX_POSTS: String(Math.max(
+        Number(safetySettings.SAFETY_REST_AFTER_MIN_POSTS),
+        Number(safetySettings.SAFETY_REST_AFTER_MAX_POSTS)
+      )),
+      SAFETY_REST_MAX_MINUTES: String(Math.max(
+        Number(safetySettings.SAFETY_REST_MIN_MINUTES),
+        Number(safetySettings.SAFETY_REST_MAX_MINUTES)
+      )),
+    };
+
+    setSavingSafety(true);
+    try {
+      await Promise.all(Object.entries(normalized).map(([key, value]) => (
+        fetch(`${API_URL}/config/${key}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value })
+        })
+      )));
+      setSafetySettings(normalized);
+      setMessage({ type: 'success', text: '✅ تم حفظ إعدادات حماية الحساب' });
+    } catch {
+      setMessage({ type: 'error', text: '❌ فشل حفظ إعدادات الحماية' });
+    }
+    setSavingSafety(false);
   };
 
   const handleLogout = async () => {
@@ -300,6 +353,85 @@ export default function SettingsDialog({ show, onClose }) {
           </section>
 
           {/* القسم 3: حالة الدخول */}
+          <section>
+            <label className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-500" />
+              حماية الحساب من السلوك الآلي
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs font-bold text-gray-600">
+                أقل فاصل بين المجموعات
+                <input
+                  type="number"
+                  min="1"
+                  value={safetySettings.SAFETY_MIN_DELAY_MINUTES}
+                  onChange={e => updateSafetySetting('SAFETY_MIN_DELAY_MINUTES', e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-bold text-gray-600">
+                أقصى منشورات في اليوم
+                <input
+                  type="number"
+                  min="1"
+                  value={safetySettings.SAFETY_DAILY_POST_LIMIT}
+                  onChange={e => updateSafetySetting('SAFETY_DAILY_POST_LIMIT', e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-bold text-gray-600">
+                راحة بعد عدد منشورات من
+                <input
+                  type="number"
+                  min="1"
+                  value={safetySettings.SAFETY_REST_AFTER_MIN_POSTS}
+                  onChange={e => updateSafetySetting('SAFETY_REST_AFTER_MIN_POSTS', e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-bold text-gray-600">
+                إلى
+                <input
+                  type="number"
+                  min="1"
+                  value={safetySettings.SAFETY_REST_AFTER_MAX_POSTS}
+                  onChange={e => updateSafetySetting('SAFETY_REST_AFTER_MAX_POSTS', e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-bold text-gray-600">
+                مدة الراحة من
+                <input
+                  type="number"
+                  min="1"
+                  value={safetySettings.SAFETY_REST_MIN_MINUTES}
+                  onChange={e => updateSafetySetting('SAFETY_REST_MIN_MINUTES', e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-bold text-gray-600">
+                إلى
+                <input
+                  type="number"
+                  min="1"
+                  value={safetySettings.SAFETY_REST_MAX_MINUTES}
+                  onChange={e => updateSafetySetting('SAFETY_REST_MAX_MINUTES', e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </label>
+            </div>
+
+            <button
+              onClick={saveSafetySettings}
+              disabled={savingSafety}
+              className="mt-3 w-full bg-amber-600 text-white py-3 rounded-xl font-bold hover:bg-amber-700 transition-colors disabled:opacity-50"
+            >
+              {savingSafety ? 'جاري الحفظ...' : 'حفظ إعدادات الحماية'}
+            </button>
+          </section>
+
+          {/* القسم 4: حالة الدخول */}
           <section className="bg-gray-50 p-5 rounded-2xl border-2 border-dashed border-gray-200">
             <label className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
               <User className="w-4 h-4 text-purple-600" />

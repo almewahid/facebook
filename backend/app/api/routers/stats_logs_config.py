@@ -11,6 +11,27 @@ from app.bot.scheduler import bot_scheduler
 
 router = APIRouter(tags=["stats-logs-config"])
 
+DEFAULT_SAFETY_CONFIGS = {
+    "SAFETY_MIN_DELAY_MINUTES": "1",
+    "SAFETY_DAILY_POST_LIMIT": "10",
+    "SAFETY_REST_AFTER_MIN_POSTS": "8",
+    "SAFETY_REST_AFTER_MAX_POSTS": "12",
+    "SAFETY_REST_MIN_MINUTES": "1",
+    "SAFETY_REST_MAX_MINUTES": "3",
+    "SAFETY_STOP_ON_FACEBOOK_WARNING": "true",
+}
+
+
+def ensure_default_safety_configs(db: Session):
+    changed = False
+    for key, value in DEFAULT_SAFETY_CONFIGS.items():
+        exists = db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+        if not exists:
+            db.add(models.BotConfig(key=key, value=value))
+            changed = True
+    if changed:
+        db.commit()
+
 
 # ==================== Statistics ====================
 
@@ -119,6 +140,7 @@ def generate_ai_content(context: str = Form(""), db: Session = Depends(get_db)):
 
 @router.get("/config", response_model=List[schemas.BotConfigResponse])
 def get_configs(db: Session = Depends(get_db)):
+    ensure_default_safety_configs(db)
     configs = db.query(models.BotConfig).all()
     return configs
 

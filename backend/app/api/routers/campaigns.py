@@ -8,7 +8,7 @@ import random
 from app.database import get_db
 from app import models, schemas
 from app.bot.scheduler import bot_scheduler
-from app.api.routers.publish import _save_uploaded_file
+from app.api.routers.publish import _safe_min_delay_minutes, _save_uploaded_file
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -34,6 +34,49 @@ def to_cairo_iso(dt_str: Optional[str]) -> Optional[str]:
         return dt_str
 
 
+DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def next_scheduled_cairo_time(
+    schedule_times: Optional[List[str]] = None,
+    rest_days: Optional[List[str]] = None,
+) -> Optional[datetime]:
+    """إرجاع أقرب موعد مستقبلي بتوقيت القاهرة بناءً على أوقات يومية وأيام راحة."""
+    clean_times = sorted({
+        t.strip()
+        for t in (schedule_times or [])
+        if isinstance(t, str) and len(t.strip()) >= 4
+    })
+    if not clean_times:
+        return None
+
+    rest = set(rest_days or [])
+    now = now_cairo()
+
+    for day_offset in range(0, 14):
+        candidate_day = now.date() + timedelta(days=day_offset)
+        day_key = DAY_KEYS[candidate_day.weekday()]
+        if day_key in rest:
+            continue
+
+        for time_value in clean_times:
+            try:
+                hour, minute = [int(part) for part in time_value.split(":")[:2]]
+                candidate = datetime.combine(candidate_day, datetime.min.time()).replace(
+                    hour=hour,
+                    minute=minute,
+                    second=0,
+                    microsecond=0,
+                )
+            except Exception:
+                continue
+
+            if candidate > now:
+                return candidate
+
+    return None
+
+
 def _create_campaign_record(
     db: Session,
     name: str,
@@ -44,6 +87,9 @@ def _create_campaign_record(
     delay_between_posts: int = 5,
     rotation_strategy: str = "sequential",
     image_paths: Optional[List[str]] = None,
+    publish_method: str = "new_post",
+    schedule_times: Optional[List[str]] = None,
+    rest_days: Optional[List[str]] = None,
 ):
     groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
     if not groups:
@@ -52,9 +98,12 @@ def _create_campaign_record(
     resolved_post_ids = list(post_ids or [])
     clean_texts = [t.strip() for t in (texts or []) if t and t.strip()]
     media_paths = image_paths or []
+    method = publish_method if publish_method in ("new_post", "share_page") else "new_post"
 
-    if not resolved_post_ids and not clean_texts:
+    if method == "new_post" and not resolved_post_ids and not clean_texts:
         raise HTTPException(status_code=400, detail="يجب إرسال نص منشور واحد على الأقل أو معرف منشور محفوظ")
+
+    delay_between_posts = max(_safe_min_delay_minutes(db), int(delay_between_posts or 0))
 
     if clean_texts:
         first_group_id = groups[0].id
@@ -75,11 +124,13 @@ def _create_campaign_record(
 
     plan = []
     # ✅ إصلاح 1: الوقت الافتراضي بتوقيت القاهرة
-    current_time = start_time or now_cairo()
+    current_time = start_time or next_scheduled_cairo_time(schedule_times, rest_days) or now_cairo()
     strategy = rotation_strategy or "sequential"
 
     for idx, group in enumerate(groups):
-        if strategy == "random":
+        if method == "share_page":
+            assigned_post_id = None
+        elif strategy == "random":
             assigned_post_id = random.choice(resolved_post_ids)
         else:
             assigned_post_id = resolved_post_ids[idx % len(resolved_post_ids)]
@@ -90,6 +141,8 @@ def _create_campaign_record(
             "group_id": group.id,
             "group_name": group.name,
             "platform": "Facebook",
+            "group_url": group.url,
+            "publish_method": method,
             "scheduled_time": current_time.isoformat(),
             "delay_minutes": delay_between_posts,
             "random_extra_seconds": random_extra_seconds,
@@ -103,6 +156,7 @@ def _create_campaign_record(
         name=name,
         status="active",
         post_ids=json.dumps(resolved_post_ids),
+        publish_method=method,
         rotation_strategy=strategy,
         schedule_plan=json.dumps(plan, ensure_ascii=False),
         delay_between_posts=delay_between_posts,
@@ -119,8 +173,8 @@ def _create_campaign_record(
 
     log = models.BotLog(
         level="info",
-        message=f"📋 إنشاء حملة: {new_campaign.name} (استراتيجية: {strategy})",
-        details=f"ID: {new_campaign.id} | campaign_id={new_campaign.id} | مجموعات: {len(groups)} | تأخير: {delay_between_posts} دقيقة"
+        message=f"📋 إنشاء حملة: {new_campaign.name} (طريقة: {method})",
+        details=f"ID: {new_campaign.id} | campaign_id={new_campaign.id} | method={method} | مجموعات: {len(groups)} | تأخير: {delay_between_posts} دقيقة"
     )
     db.add(log)
     db.commit()
@@ -154,8 +208,11 @@ def create_campaign(campaign_data: schemas.CampaignCreate, db: Session = Depends
         texts=campaign_data.texts,
         post_ids=campaign_data.post_ids,
         start_time=campaign_data.start_time,
+        schedule_times=campaign_data.schedule_times,
+        rest_days=campaign_data.rest_days,
         delay_between_posts=campaign_data.delay_between_posts,
         rotation_strategy=campaign_data.rotation_strategy,
+        publish_method=campaign_data.publish_method,
     )
 
 
@@ -167,6 +224,9 @@ async def create_campaign_with_media(
     start_time: Optional[str] = Form(None),
     delay_between_posts: int = Form(5),
     rotation_strategy: str = Form("sequential"),
+    publish_method: str = Form("new_post"),
+    schedule_times: Optional[str] = Form(None),
+    rest_days: Optional[str] = Form(None),
     images: Optional[List[UploadFile]] = File(None),
     video: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
@@ -196,15 +256,31 @@ async def create_campaign_with_media(
         except ValueError:
             raise HTTPException(status_code=400, detail="صيغة وقت البدء غير صحيحة")
 
+    parsed_schedule_times = None
+    parsed_rest_days = None
+    if schedule_times:
+        try:
+            parsed_schedule_times = json.loads(schedule_times)
+        except Exception:
+            parsed_schedule_times = None
+    if rest_days:
+        try:
+            parsed_rest_days = json.loads(rest_days)
+        except Exception:
+            parsed_rest_days = None
+
     return _create_campaign_record(
         db=db,
         name=name,
         group_ids=group_ids,
         texts=parsed_texts,
         start_time=parsed_start_time,
+        schedule_times=parsed_schedule_times,
+        rest_days=parsed_rest_days,
         delay_between_posts=delay_between_posts,
         rotation_strategy=rotation_strategy,
         image_paths=image_paths,
+        publish_method=publish_method,
     )
 
 
@@ -245,6 +321,7 @@ def get_campaign_plan(campaign_id: int, db: Session = Depends(get_db)):
         "campaign_name": campaign.name,
         "status": campaign.status,
         "strategy": campaign.rotation_strategy,
+        "publish_method": campaign.publish_method or "new_post",
         "total_groups": campaign.total_groups,
         "sent_count": campaign.sent_count,
         "plan": plan,
@@ -297,14 +374,25 @@ def get_campaign_live_status(campaign_id: int, db: Session = Depends(get_db)):
             # لم يحن وقته بعد → هو نفسه المنشور القادم
             next_post_time_cairo = scheduled_cairo
 
-    # ✅ إصلاح 4: تقدير إجمالي وقت النشر المتبقي
+    # ✅ إصلاح 4: تقدير إجمالي وقت النشر المتبقي من موعد الجدولة الحقيقي
     remaining_groups = len(pending_items)
     delay_minutes = campaign.delay_between_posts or 5
     estimated_remaining_minutes = remaining_groups * delay_minutes
     estimated_finish_time = None
     if remaining_groups > 0:
-        finish_dt = now_cairo() + timedelta(minutes=estimated_remaining_minutes)
-        estimated_finish_time = finish_dt.isoformat()
+        try:
+            last_pending_time = datetime.fromisoformat(
+                pending_items[-1].get("scheduled_time")
+            )
+            finish_dt = last_pending_time + timedelta(minutes=delay_minutes)
+            estimated_finish_time = finish_dt.isoformat()
+            estimated_remaining_minutes = max(
+                0,
+                round((finish_dt - now_cairo()).total_seconds() / 60)
+            )
+        except Exception:
+            finish_dt = now_cairo() + timedelta(minutes=estimated_remaining_minutes)
+            estimated_finish_time = finish_dt.isoformat()
 
     # آخر النشاطات من جدول posts
     recent_posts = db.query(models.Post).filter(
@@ -352,6 +440,7 @@ def get_campaign_live_status(campaign_id: int, db: Session = Depends(get_db)):
         "id": campaign.id,
         "name": campaign.name,
         "status": effective_status,
+        "publish_method": campaign.publish_method or "new_post",
         "scheduler_running": is_scheduler_running,
         "progress": {
             "percent": progress_percent,
@@ -449,7 +538,21 @@ def stop_campaign(campaign_id: int, db: Session = Depends(get_db)):
     db.add(log)
     db.commit()
 
-    return {"status": "cancelled", "campaign_id": campaign_id}
+    active_campaigns = db.query(models.Campaign).filter(models.Campaign.status == "active").count()
+    pending_posts = db.query(models.PublishPost).filter(
+        models.PublishPost.status.in_(["pending", "publishing"])
+    ).count()
+    scheduler_stopped = False
+    if active_campaigns == 0 and pending_posts == 0 and bot_scheduler and bot_scheduler.is_running:
+        bot_scheduler.stop()
+        scheduler_stopped = True
+
+    return {
+        "status": "cancelled",
+        "campaign_id": campaign_id,
+        "scheduler_running": bool(bot_scheduler and bot_scheduler.is_running),
+        "scheduler_stopped": scheduler_stopped,
+    }
 
 
 @router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)

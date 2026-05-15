@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { Search, Plus, FolderPlus, Edit2, Check, X, Trash2 } from 'lucide-react';
 
-export default function GroupsManager({ 
-  groups, 
-  searchQuery, 
+export default function GroupsManager({
+  groups,
+  searchQuery,
   setSearchQuery,
   onToggleGroup,
   onDeleteGroup,
@@ -23,7 +23,6 @@ export default function GroupsManager({
   // حالات التحرير
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});         // يحتفظ بكامل بيانات المجموعة
-  const [editOriginal, setEditOriginal] = useState({}); // النسخة الأصلية للمقارنة
 
   // ✅ القوائم: الكل + القوائم من existingCategories (تشمل الفارغة والمرتبطة بمجموعات)
   const categoriesFromGroups = [...new Set(groups.map(g => g.category || 'عام'))];
@@ -41,19 +40,17 @@ export default function GroupsManager({
     setEditingId(group.id);
     // احتفظ بكامل بيانات المجموعة حتى لا يضيع أي حقل عند الحفظ
     const formData = {
-      name:      group.name,
-      category:  group.category || 'عام',
-      url:       group.url || null,
+      name: group.name,
+      category: group.category || 'عام',
+      url: group.url || '',
       is_active: group.is_active,
     };
     setEditForm(formData);
-    setEditOriginal(formData);
   };
 
   const cancelEditing = () => {
     setEditingId(null);
     setEditForm({});
-    setEditOriginal({});
   };
 
   const handleSave = async (id) => {
@@ -63,15 +60,14 @@ export default function GroupsManager({
     }
     if (onUpdateGroup) {
       await onUpdateGroup(id, {
-        name:      editForm.name.trim(),
-        category:  editForm.category,
-        url:       editForm.url,
+        name: editForm.name.trim(),
+        category: editForm.category,
+        url: editForm.url?.trim() || null,
         is_active: editForm.is_active,
       });
     }
     setEditingId(null);
     setEditForm({});
-    setEditOriginal({});
   };
 
   // ✅ تأكيد إضافة القائمة
@@ -118,11 +114,10 @@ export default function GroupsManager({
             <button
               key={cat}
               onClick={() => setActiveTab(cat)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                activeTab === cat
+              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all ${activeTab === cat
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
-              }`}
+                }`}
             >
               {cat}
               <span className="mr-2 opacity-70 text-xs">
@@ -169,14 +164,40 @@ export default function GroupsManager({
                   {/* عمود الاسم */}
                   <td className="px-6 py-4">
                     {editingId === group.id ? (
-                      <input
-                        type="text"
-                        className="w-full p-1 border rounded text-sm focus:ring-2 focus:ring-blue-500"
-                        value={editForm.name}
-                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                      />
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                          value={editForm.name}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          placeholder="اسم المجموعة"
+                        />
+                        <input
+                          type="url"
+                          dir="ltr"
+                          className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 text-left font-mono"
+                          value={editForm.url || ''}
+                          onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
+                          placeholder="https://facebook.com/groups/..."
+                        />
+                      </div>
                     ) : (
-                      <div className="text-sm font-bold text-gray-900">{group.name}</div>
+                      <div>
+                        <div className="text-sm font-bold text-gray-900">{group.name}</div>
+                        {group.url ? (
+                          <a
+                            href={group.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 inline-block max-w-xs truncate text-[11px] text-blue-600 hover:underline"
+                            dir="ltr"
+                          >
+                            {group.url}
+                          </a>
+                        ) : (
+                          <div className="mt-1 text-[11px] text-amber-600">لا يوجد رابط محفوظ</div>
+                        )}
+                      </div>
                     )}
                   </td>
 
@@ -203,11 +224,10 @@ export default function GroupsManager({
                   <td className="px-6 py-4">
                     <button
                       onClick={() => onToggleGroup(group.id, group.is_active)}
-                      className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                        group.is_active
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${group.is_active
                           ? 'bg-green-100 text-green-700'
                           : 'bg-red-100 text-red-700'
-                      }`}
+                        }`}
                     >
                       {group.is_active ? '● نشط' : '○ موقف'}
                     </button>

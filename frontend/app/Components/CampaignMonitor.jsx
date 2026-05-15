@@ -9,8 +9,7 @@ function useCountdown(nextPostTime) {
   useEffect(() => {
     if (!nextPostTime) { setSeconds(null); return; }
     const calc = () => {
-      const timeStr = nextPostTime.endsWith('Z') || nextPostTime.includes('+') ? nextPostTime : nextPostTime + '+03:00';
-      const diff = Math.max(0, Math.floor((new Date(timeStr) - Date.now()) / 1000));
+      const diff = Math.max(0, Math.floor((parseCairoDate(nextPostTime) - Date.now()) / 1000));
       setSeconds(diff);
     };
     calc();
@@ -20,24 +19,74 @@ function useCountdown(nextPostTime) {
   return seconds;
 }
 
+function parseCairoDate(isoStr) {
+  if (!isoStr) return null;
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(isoStr);
+  return new Date(hasTimezone ? isoStr : `${isoStr}+03:00`);
+}
+
 function formatCairoTime(isoStr) {
   if (!isoStr) return '';
   try {
-    const timeStr = isoStr.endsWith('Z') || isoStr.includes('+') ? isoStr : isoStr + '+03:00';
-    return new Date(timeStr).toLocaleTimeString('ar-EG', {
+    return parseCairoDate(isoStr).toLocaleTimeString('ar-EG', {
       hour: '2-digit', minute: '2-digit', second: '2-digit',
       timeZone: 'Africa/Cairo'
     });
   } catch { return isoStr; }
 }
 
+function formatCairoDateTime(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const date = parseCairoDate(isoStr);
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+    const targetDay = date.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+    const time = formatCairoTime(isoStr);
+    if (targetDay === today) return time;
+    const day = date.toLocaleDateString('ar-EG', {
+      weekday: 'short', day: '2-digit', month: '2-digit',
+      timeZone: 'Africa/Cairo'
+    });
+    return `${day} - ${time}`;
+  } catch { return formatCairoTime(isoStr); }
+}
+
 function formatDuration(minutes) {
   if (!minutes || minutes <= 0) return 'أقل من دقيقة';
-  const h = Math.floor(minutes / 60);
+  const d = Math.floor(minutes / 1440);
+  const h = Math.floor((minutes % 1440) / 60);
   const m = minutes % 60;
+  if (d > 0 && h > 0) return `${d} يوم و${h} ساعة${m > 0 ? ` و${m} دقيقة` : ''}`;
+  if (d > 0) return `${d} يوم${m > 0 ? ` و${m} دقيقة` : ''}`;
   if (h > 0 && m > 0) return `${h} ساعة و${m} دقيقة`;
   if (h > 0) return `${h} ساعة`;
   return `${m} دقيقة`;
+}
+
+function formatCountdown(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (days > 0) {
+    return {
+      value: `${days} يوم ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`,
+      label: 'يوم ساعة : دقيقة : ثانية'
+    };
+  }
+
+  if (hours > 0) {
+    return {
+      value: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`,
+      label: 'ساعة : دقيقة : ثانية'
+    };
+  }
+
+  return {
+    value: `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`,
+    label: 'دقيقة : ثانية'
+  };
 }
 
 function isPendingApproval(post) {
@@ -66,6 +115,7 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
       if (!res.ok) throw new Error();
       clearInterval(intervalRef.current);
       setData(prev => ({ ...prev, status: 'cancelled' }));
+      window.dispatchEvent(new Event('bot-status-changed'));
     } catch {
       alert('❌ فشل إيقاف النشر');
     } finally {
@@ -107,6 +157,7 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
   const activity = isPublish ? data.results : (data.results || data.recent_activity);
   const isWaitingBot = data.status === 'waiting_bot';
   const isRunning = ['active', 'publishing'].includes(data.status);
+  const countdownView = countdown === null || countdown === 0 ? null : formatCountdown(countdown);
 
   const getArabicStatus = (s) => ({
     pending: 'قيد الانتظار', success: 'نجاح', sent: 'تم الإرسال',
@@ -179,7 +230,7 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
         <div className="mb-4 p-3 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-600 flex justify-between items-center">
           <span>⏰ وقت الانتهاء المتوقع</span>
           <span className="font-semibold text-gray-800">
-            {formatCairoTime(data.estimated_finish_time)}
+            {formatCairoDateTime(data.estimated_finish_time)}
             <span className="text-gray-400 font-normal mr-2">
               (بعد {formatDuration(data.estimated_remaining_minutes)})
             </span>
@@ -204,7 +255,7 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
           <div>
             <p className="text-xs text-blue-600 font-semibold mb-0.5">⏱ المنشور القادم خلال</p>
             <p className="text-xs text-gray-400">
-              {data.next_post_time ? formatCairoTime(data.next_post_time) : 'يتم الحساب...'}
+              {data.next_post_time ? formatCairoDateTime(data.next_post_time) : 'يتم الحساب...'}
             </p>
           </div>
           <div className="text-left">
@@ -215,11 +266,9 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
             ) : (
               <div className="text-left">
                 <span className="font-mono text-2xl font-bold text-blue-700">
-                  {String(Math.floor(countdown / 60)).padStart(2, '0')}
-                  <span className="text-blue-400 animate-pulse mx-0.5">:</span>
-                  {String(countdown % 60).padStart(2, '0')}
+                  {countdownView.value}
                 </span>
-                <p className="text-xs text-blue-400 mt-0.5 text-center">دقيقة : ثانية</p>
+                <p className="text-xs text-blue-400 mt-0.5 text-center">{countdownView.label}</p>
               </div>
             )}
           </div>
