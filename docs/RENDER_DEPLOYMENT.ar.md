@@ -29,19 +29,19 @@ copy-fixed-files-to-original.bat
 - Root Directory: `backend`
 - Dockerfile Path: `Dockerfile`
 - Health Check Path: `/health`
-- Plan: `Starter` لو تريدها دائمة بدون نوم
+- Plan: `Free` للتجربة المجانية، أو `Starter` لو تريدها دائمة بدون نوم
 
 ## 3. المتغيرات المطلوبة
 
 أضف أو راجع هذه القيم في Render:
 
 ```env
-DATABASE_URL=sqlite:////var/data/facebook_bot.db
+DATABASE_URL=sqlite:///./facebook_bot.db
 ALLOWED_ORIGINS=https://YOUR-VERCEL-DOMAIN.vercel.app
 CHROME_HEADLESS=1
-CHROME_USER_DATA=/var/data/chrome_profile
+CHROME_USER_DATA=/app/chrome_profile
 CHROME_PROFILE_FOLDER=Default
-MEDIA_DIR=/var/data/uploaded_media
+MEDIA_DIR=/app/uploaded_media
 MAX_GROUPS_PER_SESSION=7
 DELAY_BETWEEN_CYCLES=3600
 MIN_DELAY_BETWEEN_GROUPS=60
@@ -75,5 +75,5 @@ NEXT_PUBLIC_API_URL=https://YOUR-RENDER-SERVICE.onrender.com/api/v1
 ## ملاحظات مهمة
 
 - الخطة المجانية في Render تنام بعد فترة بدون زيارات. الخطة المدفوعة مثل Starter تبقى دائمة.
-- ملف `render.yaml` يضيف قرصًا دائمًا بحجم 1GB في `/var/data` لحفظ SQLite وملفات Chrome قدر الإمكان.
-- للاستقرار الأقوى مع عدة مستخدمين، الأفضل لاحقًا استخدام PostgreSQL وVPS.
+- في الخطة المجانية لا يوجد قرص دائم هنا، لذلك قاعدة SQLite وجلسة Chrome قد تضيع عند إعادة التشغيل أو إعادة النشر.
+- للاستقرار الأقوى مع عدة مستخدمين، الأفضل لاحقًا استخدام PostgreSQL وقرص دائم أو VPS.

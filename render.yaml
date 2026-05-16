@@ -2,27 +2,23 @@ services:
   - type: web
     name: facebook-auto-poster-api
     runtime: docker
-    plan: starter
+    plan: free
     rootDir: backend
     healthCheckPath: /health
     autoDeploy: true
-    disk:
-      name: data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: DATABASE_URL
-        value: sqlite:////var/data/facebook_bot.db
+        value: sqlite:///./facebook_bot.db
       - key: ALLOWED_ORIGINS
         sync: false
       - key: CHROME_HEADLESS
         value: "1"
       - key: CHROME_USER_DATA
-        value: /var/data/chrome_profile
+        value: /app/chrome_profile
       - key: CHROME_PROFILE_FOLDER
         value: Default
       - key: MEDIA_DIR
-        value: /var/data/uploaded_media
+        value: /app/uploaded_media
       - key: SECRET_KEY
         generateValue: true
       - key: ANTHROPIC_API_KEY
