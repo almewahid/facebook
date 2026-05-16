@@ -43,7 +43,7 @@ def ensure_runtime_columns():
 
 ensure_runtime_columns()
 
-MEDIA_DIR = Path(__file__).resolve().parents[1] / "uploaded_media"
+MEDIA_DIR = Path(os.getenv("MEDIA_DIR", Path(__file__).resolve().parents[1] / "uploaded_media"))
 MEDIA_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(

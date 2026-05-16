@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import os
 from pathlib import Path
 
 from app.api.routers import groups, publish, campaigns, bot, stats_logs_config
 
 app = FastAPI(title="Facebook Bot API")
-MEDIA_DIR = Path(__file__).resolve().parents[2] / "uploaded_media"
+MEDIA_DIR = Path(os.getenv("MEDIA_DIR", Path(__file__).resolve().parents[2] / "uploaded_media"))
 MEDIA_DIR.mkdir(exist_ok=True)
 
 # ضبط CORS — عدّل الـ origins حسب مشروعك
