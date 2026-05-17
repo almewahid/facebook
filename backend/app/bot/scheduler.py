@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app import models
 from app.bot.selenium_bot import FacebookBot
-from app.database import DATABASE_URL, SessionLocal
+from app.database import DATABASE_URL, SessionLocal, engine, Base
 
 CAIRO_TZ = timezone(timedelta(hours=3))
 
@@ -36,6 +36,7 @@ class BotScheduler:
         self.SessionLocal = sessionmaker(bind=self.engine)
 
     def _load_saved_config(self):
+        Base.metadata.create_all(bind=engine)
         db = SessionLocal()
         try:
             keys = {

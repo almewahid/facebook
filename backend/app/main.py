@@ -7,7 +7,7 @@ from sqlalchemy import text
 from pathlib import Path
 
 from app.database import engine, Base
-from app.api.routers import groups, publish, campaigns, bot, stats_logs_config
+from app import models
 
 Base.metadata.create_all(bind=engine)
 
@@ -42,6 +42,8 @@ def ensure_runtime_columns():
 
 
 ensure_runtime_columns()
+
+from app.api.routers import groups, publish, campaigns, bot, stats_logs_config
 
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", Path(__file__).resolve().parents[1] / "uploaded_media"))
 MEDIA_DIR.mkdir(exist_ok=True)
