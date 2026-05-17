@@ -36,7 +36,7 @@ copy-fixed-files-to-original.bat
 أضف أو راجع هذه القيم في Render:
 
 ```env
-DATABASE_URL=sqlite:///./facebook_bot.db
+DATABASE_URL=postgresql://USER:PASSWORD@HOST.neon.tech/DBNAME?sslmode=require
 ALLOWED_ORIGINS=https://YOUR-VERCEL-DOMAIN.vercel.app
 CHROME_HEADLESS=1
 CHROME_USER_DATA=/app/chrome_profile
@@ -75,5 +75,6 @@ NEXT_PUBLIC_API_URL=https://YOUR-RENDER-SERVICE.onrender.com/api/v1
 ## ملاحظات مهمة
 
 - الخطة المجانية في Render تنام بعد فترة بدون زيارات. الخطة المدفوعة مثل Starter تبقى دائمة.
-- في الخطة المجانية لا يوجد قرص دائم هنا، لذلك قاعدة SQLite وجلسة Chrome قد تضيع عند إعادة التشغيل أو إعادة النشر.
-- للاستقرار الأقوى مع عدة مستخدمين، الأفضل لاحقًا استخدام PostgreSQL وقرص دائم أو VPS.
+- استخدم Neon/Postgres في `DATABASE_URL` حتى لا تضيع الجداول عند إعادة تشغيل Render.
+- في الخطة المجانية لا يوجد قرص دائم هنا، لذلك جلسة Chrome والملفات المرفوعة قد تضيع عند إعادة التشغيل أو إعادة النشر.
+- للاستقرار الأقوى مع عدة مستخدمين، الأفضل لاحقًا استخدام VPS أو قرص دائم للملفات، مع PostgreSQL للبيانات.
