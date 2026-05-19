@@ -27,7 +27,7 @@ SERVICES = {
 
 DEFAULT_PLATFORM_SETTINGS = {
     "manual_payment_info": "حوّل قيمة الاشتراك ثم أدخل رقم العملية أو رابط إثبات الدفع ليقوم المدير بالتفعيل.",
-    "currency": "EGP",
+    "currency": "USD",
     "service_prices": {
         "new_post": {"monthly": 0, "yearly": 0},
         "share_page": {"monthly": 0, "yearly": 0},
@@ -61,6 +61,8 @@ def get_platform_settings(db: Session) -> dict:
             **(saved.get("service_prices") or {}),
         },
     }
+    currency = str(merged.get("currency") or "USD").upper()
+    merged["currency"] = "USD" if currency == "EGP" else currency
     return merged
 
 
@@ -85,7 +87,7 @@ def list_plans(db: Session = Depends(get_db)):
     return {
         "plans": PLANS,
         "services": services,
-        "currency": settings.get("currency", "EGP"),
+        "currency": settings.get("currency", "USD"),
         "manual_payment": {
             **MANUAL_PAYMENT_DETAILS,
             "instructions": settings.get("manual_payment_info") or MANUAL_PAYMENT_DETAILS["instructions"],
@@ -133,7 +135,7 @@ def create_manual_payment(
         payment_method=data.payment_method,
         payment_reference=data.payment_reference,
         amount_cents=amount_cents,
-        currency=settings.get("currency", "EGP"),
+        currency=settings.get("currency", "USD"),
         provider="manual",
     )
     db.add(subscription)
@@ -150,7 +152,7 @@ def create_manual_payment(
         payment_reference=data.payment_reference,
         proof_url=data.proof_url,
         amount_cents=amount_cents,
-        currency=settings.get("currency", "EGP"),
+        currency=settings.get("currency", "USD"),
         provider="manual",
     )
     db.add(payment)

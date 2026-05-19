@@ -39,7 +39,7 @@ def ensure_runtime_columns():
             "service_key": "VARCHAR DEFAULT 'new_post'",
             "service_name": "VARCHAR",
             "amount_cents": "INTEGER",
-            "currency": "VARCHAR DEFAULT 'EGP'",
+            "currency": "VARCHAR DEFAULT 'USD'",
         },
         "payments": {
             "service_key": "VARCHAR DEFAULT 'new_post'",

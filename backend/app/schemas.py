@@ -44,7 +44,7 @@ class SubscriptionResponse(BaseModel):
     payment_method: Optional[str] = None
     payment_reference: Optional[str] = None
     amount_cents: Optional[int] = None
-    currency: Optional[str] = "EGP"
+    currency: Optional[str] = "USD"
     provider: Optional[str] = None
     created_at: datetime
 
@@ -70,7 +70,7 @@ class PaymentResponse(BaseModel):
     payment_reference: Optional[str] = None
     proof_url: Optional[str] = None
     amount_cents: Optional[int] = None
-    currency: Optional[str] = "EGP"
+    currency: Optional[str] = "USD"
     provider: str
     created_at: datetime
 
@@ -88,7 +88,7 @@ class AdminServicePrice(BaseModel):
 
 class AdminPlatformSettings(BaseModel):
     manual_payment_info: Optional[str] = ""
-    currency: str = "EGP"
+    currency: str = "USD"
     service_prices: dict[str, AdminServicePrice]
 
 # ==================== Group Schemas ====================

@@ -51,7 +51,7 @@ def update_admin_platform_settings(
     payload = {
         **DEFAULT_PLATFORM_SETTINGS,
         "manual_payment_info": data.manual_payment_info or "",
-        "currency": data.currency or "EGP",
+        "currency": data.currency or "USD",
         "service_prices": {
             key: {
                 "monthly": int(value.monthly or 0),
@@ -126,7 +126,7 @@ def activate_subscription(
     subscription.payment_method = "manual"
     subscription.payment_reference = data.payment_reference or subscription.payment_reference
     subscription.amount_cents = getattr(subscription, "amount_cents", None) or getattr(payment, "amount_cents", None)
-    subscription.currency = getattr(subscription, "currency", None) or getattr(payment, "currency", None) or "EGP"
+    subscription.currency = getattr(subscription, "currency", None) or getattr(payment, "currency", None) or "USD"
     subscription.provider = "manual"
 
     db.commit()

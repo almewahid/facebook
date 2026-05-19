@@ -15,7 +15,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 const DEFAULT_PLATFORM_SETTINGS = {
   manual_payment_info: '',
-  currency: 'EGP',
+  currency: 'USD',
   service_prices: {
     new_post: { monthly: 0, yearly: 0 },
     share_page: { monthly: 0, yearly: 0 },
@@ -153,7 +153,7 @@ function AuthPanel({ mode, setMode, error, onLogin, onRegister, onGoogleLogin, o
   );
 }
 
-function formatMoney(cents = 0, currency = 'EGP') {
+function formatMoney(cents = 0, currency = 'USD') {
   const value = Number(cents || 0) / 100;
   return `${value.toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ${currency}`;
 }
@@ -170,7 +170,7 @@ function SubscriptionPanel({ subscription, billingPlans, onSubmitPayment, onLogo
   };
   const selectedService = services[serviceKey] || services.new_post;
   const selectedPrice = selectedService?.prices?.[plan] || 0;
-  const currency = billingPlans?.currency || 'EGP';
+  const currency = billingPlans?.currency || 'USD';
 
   const submit = async (e) => {
     e.preventDefault();
@@ -184,8 +184,9 @@ function SubscriptionPanel({ subscription, billingPlans, onSubmitPayment, onLogo
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6" dir="rtl">
-      <form onSubmit={submit} className="w-full max-w-xl bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-5">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4" dir="rtl">
+      <form onSubmit={submit} className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+        <div className="flex-1 space-y-4 overflow-y-auto p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">تفعيل الاشتراك</h1>
@@ -238,9 +239,12 @@ function SubscriptionPanel({ subscription, billingPlans, onSubmitPayment, onLogo
           value={proofUrl}
           onChange={(e) => setProofUrl(e.target.value)}
         />
-        <button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-md py-2 font-medium">إرسال طلب التفعيل</button>
         {message && <p className="text-sm text-gray-700">{message}</p>}
         {subscription?.subscription?.status === 'pending' && <p className="text-sm text-amber-700">لديك طلب تفعيل قيد المراجعة.</p>}
+        </div>
+        <div className="border-t border-gray-100 bg-white p-4">
+          <button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-md py-3 font-medium">إرسال طلب التفعيل</button>
+        </div>
       </form>
     </div>
   );
@@ -290,7 +294,7 @@ function AdminPanel() {
                 <p className="font-semibold text-gray-900">
                   مستخدم #{payment.user_id} - {payment.service_name || 'خدمة غير محددة'} - {payment.plan === 'yearly' ? 'سنوي' : 'شهري'}
                 </p>
-                <p className="text-gray-500">القيمة: {formatMoney(payment.amount_cents || 0, payment.currency || 'EGP')}</p>
+                <p className="text-gray-500">القيمة: {formatMoney(payment.amount_cents || 0, payment.currency || 'USD')}</p>
                 <p className="text-gray-500">رقم العملية: {payment.payment_reference || 'غير مضاف'}</p>
               </div>
               <button onClick={() => activate(payment)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md px-4 py-2 text-sm">
@@ -514,7 +518,7 @@ function AdminControlPanel({ setView }) {
               <input
                 className="mt-2 w-full rounded-md border border-gray-200 px-3 py-2 font-normal text-gray-800"
                 value={platformSettings.currency}
-                onChange={(e) => setPlatformSettings({ ...platformSettings, currency: e.target.value || 'EGP' })}
+                onChange={(e) => setPlatformSettings({ ...platformSettings, currency: e.target.value || 'USD' })}
               />
             </label>
             <label className="text-xs font-bold text-gray-600 md:col-span-2">

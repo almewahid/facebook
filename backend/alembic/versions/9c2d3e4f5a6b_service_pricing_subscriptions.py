@@ -19,7 +19,7 @@ def upgrade():
     op.add_column("subscriptions", sa.Column("service_key", sa.String(), server_default="new_post", nullable=True))
     op.add_column("subscriptions", sa.Column("service_name", sa.String(), nullable=True))
     op.add_column("subscriptions", sa.Column("amount_cents", sa.Integer(), nullable=True))
-    op.add_column("subscriptions", sa.Column("currency", sa.String(), server_default="EGP", nullable=True))
+    op.add_column("subscriptions", sa.Column("currency", sa.String(), server_default="USD", nullable=True))
     op.add_column("payments", sa.Column("service_key", sa.String(), server_default="new_post", nullable=True))
     op.add_column("payments", sa.Column("service_name", sa.String(), nullable=True))
 

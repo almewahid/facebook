@@ -44,7 +44,7 @@ class Subscription(Base):
     payment_method      = Column(String, nullable=True)  # manual | stripe | paymob | paddle
     payment_reference   = Column(String, nullable=True)
     amount_cents        = Column(Integer, nullable=True)
-    currency            = Column(String, default="EGP")
+    currency            = Column(String, default="USD")
     provider            = Column(String, default="manual", index=True)
     provider_customer_id = Column(String, nullable=True)
     provider_subscription_id = Column(String, nullable=True)
@@ -70,7 +70,7 @@ class Payment(Base):
     payment_reference = Column(String, nullable=True)
     proof_url         = Column(String, nullable=True)
     amount_cents      = Column(Integer, nullable=True)
-    currency          = Column(String, default="EGP")
+    currency          = Column(String, default="USD")
     provider          = Column(String, default="manual", index=True)
     provider_payment_id = Column(String, nullable=True)
     raw_payload       = Column(Text, nullable=True)
