@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { RefreshCw, PlusCircle, ChevronDown, CreditCard } from 'lucide-react';
+import { RefreshCw, PlusCircle, ChevronDown, CreditCard, UsersRound, Settings2 } from 'lucide-react';
 import Header from './Components/Header';
 import Sidebar from './Components/Sidebar';
 import Dashboard from './Components/Dashboard';
@@ -263,8 +263,25 @@ function AdminPanel() {
 }
 
 function AdminControlPanel({ setView }) {
+  const [section, setSection] = useState('subscriptions');
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [platformSettings, setPlatformSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fb_poster_admin_settings');
+      return saved ? JSON.parse(saved) : {
+        monthlyPlanLabel: 'شهري',
+        yearlyPlanLabel: 'سنوي',
+        manualPaymentInfo: '',
+      };
+    } catch {
+      return {
+        monthlyPlanLabel: 'شهري',
+        yearlyPlanLabel: 'سنوي',
+        manualPaymentInfo: '',
+      };
+    }
+  });
 
   const loadUsers = async () => {
     setLoadingUsers(true);
@@ -278,14 +295,39 @@ function AdminControlPanel({ setView }) {
 
   useEffect(() => { loadUsers(); }, []);
 
+  const savePlatformSettings = () => {
+    localStorage.setItem('fb_poster_admin_settings', JSON.stringify(platformSettings));
+    alert('تم حفظ إعدادات المنصة');
+  };
+
   const cards = [
     {
       icon: CreditCard,
       title: 'طلبات الاشتراك',
       desc: 'مراجعة المدفوعات اليدوية وتفعيل الاشتراكات.',
-      action: 'فتح الطلبات',
-      onClick: () => setView('admin'),
-    }
+      action: 'فتح',
+      view: 'subscriptions',
+      onClick: () => {
+        setSection('subscriptions');
+        setView('admin');
+      },
+    },
+    {
+      icon: UsersRound,
+      title: 'المستخدمون',
+      desc: 'عرض حسابات المستخدمين وحالة كل حساب.',
+      action: 'فتح',
+      view: 'users',
+      onClick: () => setSection('users'),
+    },
+    {
+      icon: Settings2,
+      title: 'إعدادات المنصة',
+      desc: 'ضبط أسماء الخطط وبيانات الدفع اليدوي.',
+      action: 'فتح',
+      view: 'settings',
+      onClick: () => setSection('settings'),
+    },
   ];
 
   return (
@@ -300,12 +342,11 @@ function AdminControlPanel({ setView }) {
             <p className="mt-2 min-h-10 text-xs leading-5 text-gray-500">{desc}</p>
             <button
               type="button"
-              disabled={!onClick}
               onClick={onClick || undefined}
               className={`mt-4 w-full rounded-md px-4 py-2 text-xs font-bold ${
-                onClick
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                section === view
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               {action}
@@ -314,6 +355,21 @@ function AdminControlPanel({ setView }) {
         ))}
       </div>
 
+      {section === 'subscriptions' && (
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-gray-900">طلبات الاشتراك</h2>
+              <p className="mt-1 text-xs text-gray-400">افتح صفحة طلبات الاشتراك لمراجعة المدفوعات اليدوية وتفعيل الحسابات.</p>
+            </div>
+            <button onClick={() => setView('admin')} className="rounded-md bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">
+              فتح طلبات الاشتراك
+            </button>
+          </div>
+        </div>
+      )}
+
+      {section === 'users' && (
       <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -356,6 +412,46 @@ function AdminControlPanel({ setView }) {
           </table>
         </div>
       </div>
+      )}
+
+      {section === 'settings' && (
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mb-5">
+            <h2 className="text-sm font-bold text-gray-900">إعدادات المنصة</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label className="text-xs font-bold text-gray-600">
+              اسم الخطة الشهرية
+              <input
+                className="mt-2 w-full rounded-md border border-gray-200 px-3 py-2 font-normal text-gray-800"
+                value={platformSettings.monthlyPlanLabel}
+                onChange={(e) => setPlatformSettings({ ...platformSettings, monthlyPlanLabel: e.target.value })}
+              />
+            </label>
+            <label className="text-xs font-bold text-gray-600">
+              اسم الخطة السنوية
+              <input
+                className="mt-2 w-full rounded-md border border-gray-200 px-3 py-2 font-normal text-gray-800"
+                value={platformSettings.yearlyPlanLabel}
+                onChange={(e) => setPlatformSettings({ ...platformSettings, yearlyPlanLabel: e.target.value })}
+              />
+            </label>
+            <label className="text-xs font-bold text-gray-600 md:col-span-2">
+              بيانات الدفع اليدوي
+              <textarea
+                rows={4}
+                className="mt-2 w-full rounded-md border border-gray-200 px-3 py-2 font-normal text-gray-800"
+                value={platformSettings.manualPaymentInfo}
+                onChange={(e) => setPlatformSettings({ ...platformSettings, manualPaymentInfo: e.target.value })}
+                placeholder="اكتب بيانات التحويل التي تظهر للمستخدم في شاشة تفعيل الاشتراك"
+              />
+            </label>
+          </div>
+          <button onClick={savePlatformSettings} className="mt-5 rounded-md bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700">
+            حفظ الإعدادات
+          </button>
+        </div>
+      )}
     </section>
   );
 }
