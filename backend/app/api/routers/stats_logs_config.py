@@ -6,6 +6,7 @@ import os
 import re
 
 from app.database import get_db
+from app.deps import require_active_subscription
 from app import models, schemas
 from app.bot.scheduler import bot_scheduler
 
@@ -22,12 +23,15 @@ DEFAULT_SAFETY_CONFIGS = {
 }
 
 
-def ensure_default_safety_configs(db: Session):
+def ensure_default_safety_configs(db: Session, user_id: int):
     changed = False
     for key, value in DEFAULT_SAFETY_CONFIGS.items():
-        exists = db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+        exists = db.query(models.BotConfig).filter(
+            models.BotConfig.key == key,
+            models.BotConfig.user_id == user_id,
+        ).first()
         if not exists:
-            db.add(models.BotConfig(key=key, value=value))
+            db.add(models.BotConfig(key=key, value=value, user_id=user_id))
             changed = True
     if changed:
         db.commit()
@@ -36,9 +40,13 @@ def ensure_default_safety_configs(db: Session):
 # ==================== Statistics ====================
 
 @router.get("/stats")
-def get_stats(db: Session = Depends(get_db)):
+def get_stats(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     try:
         real_posts_query = db.query(models.Post).filter(
+            models.Post.user_id == current_user.id,
             ~(
                 models.Post.cycle_number.is_(None)
                 & models.Post.status.in_(["pending", "draft"])
@@ -52,10 +60,15 @@ def get_stats(db: Session = Depends(get_db)):
 
         success_rate = (successful / total_posts * 100) if total_posts > 0 else 0
 
-        total_groups = db.query(models.Group).count()
-        active_groups = db.query(models.Group).filter(models.Group.is_active == True).count()
+        total_groups = db.query(models.Group).filter(models.Group.user_id == current_user.id).count()
+        active_groups = db.query(models.Group).filter(
+            models.Group.user_id == current_user.id,
+            models.Group.is_active == True,
+        ).count()
 
-        last_post = db.query(models.Post).order_by(models.Post.created_at.desc()).first()
+        last_post = db.query(models.Post).filter(
+            models.Post.user_id == current_user.id
+        ).order_by(models.Post.created_at.desc()).first()
 
         return {
             "total_posts": total_posts,
@@ -84,8 +97,14 @@ def get_stats(db: Session = Depends(get_db)):
 # ==================== Logs ====================
 
 @router.get("/logs", response_model=List[schemas.BotLogResponse])
-def get_logs(skip: int = 0, limit: int = 100, level: str = None, db: Session = Depends(get_db)):
-    query = db.query(models.BotLog)
+def get_logs(
+    skip: int = 0,
+    limit: int = 100,
+    level: str = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    query = db.query(models.BotLog).filter(models.BotLog.user_id == current_user.id)
     if level:
         query = query.filter(models.BotLog.level == level)
     logs = query.order_by(models.BotLog.created_at.desc()).offset(skip).limit(limit).all()
@@ -97,13 +116,23 @@ def get_logs(skip: int = 0, limit: int = 100, level: str = None, db: Session = D
 from app.bot.ai_engine import ai_engine
 
 @router.get("/stats/ai/insights", response_model=List[schemas.AIInsightResponse])
-def get_ai_insights(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+def get_ai_insights(
+    skip: int = 0,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """جلب الرؤى المولدة بواسطة الذكاء الاصطناعي"""
-    insights = db.query(models.AIInsight).order_by(models.AIInsight.created_at.desc()).offset(skip).limit(limit).all()
+    insights = db.query(models.AIInsight).filter(
+        models.AIInsight.user_id == current_user.id
+    ).order_by(models.AIInsight.created_at.desc()).offset(skip).limit(limit).all()
     return insights
 
 @router.post("/stats/ai/analyze")
-def trigger_ai_analysis(db: Session = Depends(get_db)):
+def trigger_ai_analysis(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """تشغيل عملية تحليل البيانات باستخدام Gemini API"""
     if not ai_engine.enabled:
         raise HTTPException(status_code=400, detail="الذكاء الاصطناعي (Gemini) غير مفعل")
@@ -124,7 +153,11 @@ def trigger_ai_analysis(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stats/ai/generate")
-def generate_ai_content(context: str = Form(""), db: Session = Depends(get_db)):
+def generate_ai_content(
+    context: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """توليد محتوى أو تعليقات باستخدام الذكاء الاصطناعي"""
     if not ai_engine.enabled:
         raise HTTPException(status_code=400, detail="الذكاء الاصطناعي غير مفعل")
@@ -139,14 +172,22 @@ def generate_ai_content(context: str = Form(""), db: Session = Depends(get_db)):
 # ==================== Config ====================
 
 @router.get("/config", response_model=List[schemas.BotConfigResponse])
-def get_configs(db: Session = Depends(get_db)):
-    ensure_default_safety_configs(db)
-    configs = db.query(models.BotConfig).all()
+def get_configs(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    ensure_default_safety_configs(db, current_user.id)
+    configs = db.query(models.BotConfig).filter(models.BotConfig.user_id == current_user.id).all()
     return configs
 
 
 @router.put("/config/{key}", response_model=schemas.BotConfigResponse)
-def update_config(key: str, config_update: schemas.BotConfigUpdate, db: Session = Depends(get_db)):
+def update_config(
+    key: str,
+    config_update: schemas.BotConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """تحديث إعداد في قاعدة البيانات و .env"""
 
     env_path = os.path.join(os.getcwd(), ".env")
@@ -171,9 +212,12 @@ def update_config(key: str, config_update: schemas.BotConfigUpdate, db: Session 
     except Exception as e:
         print(f"⚠️ خطأ في تحديث .env: {e}")
 
-    db_config = db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+    db_config = db.query(models.BotConfig).filter(
+        models.BotConfig.key == key,
+        models.BotConfig.user_id == current_user.id,
+    ).first()
     if not db_config:
-        db_config = models.BotConfig(key=key, value=config_update.value)
+        db_config = models.BotConfig(key=key, value=config_update.value, user_id=current_user.id)
         db.add(db_config)
     else:
         db_config.value = config_update.value

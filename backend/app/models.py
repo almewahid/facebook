@@ -1,9 +1,78 @@
 # backend/app/models.py
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, func, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
+
+
+class User(Base):
+    """مستخدم SaaS مالك لبياناته واشتراكه."""
+    __tablename__ = "users"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    email           = Column(String, unique=True, nullable=False, index=True)
+    full_name       = Column(String, nullable=True)
+    password_hash   = Column(String, nullable=False)
+    role            = Column(String, default="user", index=True)  # user | admin
+    is_active       = Column(Boolean, default=True)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    groups = relationship("Group", back_populates="user")
+    posts = relationship("Post", back_populates="user")
+    publish_posts = relationship("PublishPost", back_populates="user")
+    campaigns = relationship("Campaign", back_populates="user")
+    bot_configs = relationship("BotConfig", back_populates="user")
+    logs = relationship("BotLog", back_populates="user")
+    subscriptions = relationship("Subscription", back_populates="user")
+    payments = relationship("Payment", back_populates="user")
+
+
+class Subscription(Base):
+    """حالة الاشتراك هي مصدر الصلاحيات، بغض النظر عن طريقة الدفع."""
+    __tablename__ = "subscriptions"
+
+    id                  = Column(Integer, primary_key=True, index=True)
+    user_id             = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    plan                = Column(String, nullable=False, index=True)  # monthly | yearly
+    status              = Column(String, default="pending", index=True)  # pending | active | expired | cancelled
+    start_date          = Column(DateTime(timezone=True), nullable=True)
+    end_date            = Column(DateTime(timezone=True), nullable=True)
+    payment_method      = Column(String, nullable=True)  # manual | stripe | paymob | paddle
+    payment_reference   = Column(String, nullable=True)
+    provider            = Column(String, default="manual", index=True)
+    provider_customer_id = Column(String, nullable=True)
+    provider_subscription_id = Column(String, nullable=True)
+    created_at          = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="subscriptions")
+    payments = relationship("Payment", back_populates="subscription")
+
+
+class Payment(Base):
+    """طلبات الدفع اليدوي حالياً، ومخزن موحد لأي بوابة لاحقاً."""
+    __tablename__ = "payments"
+
+    id                = Column(Integer, primary_key=True, index=True)
+    user_id           = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    subscription_id   = Column(Integer, ForeignKey("subscriptions.id"), nullable=True, index=True)
+    plan              = Column(String, nullable=False, index=True)
+    status            = Column(String, default="pending", index=True)  # pending | approved | rejected | failed
+    payment_method    = Column(String, default="manual", index=True)
+    payment_reference = Column(String, nullable=True)
+    proof_url         = Column(String, nullable=True)
+    amount_cents      = Column(Integer, nullable=True)
+    currency          = Column(String, default="EGP")
+    provider          = Column(String, default="manual", index=True)
+    provider_payment_id = Column(String, nullable=True)
+    raw_payload       = Column(Text, nullable=True)
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="payments")
+    subscription = relationship("Subscription", back_populates="payments")
 
 
 class Group(Base):
@@ -11,6 +80,7 @@ class Group(Base):
     __tablename__ = "groups"
 
     id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name       = Column(String, nullable=False, index=True)
     # الحقل الجديد للتصنيف لضمان ظهور القوائم
     category   = Column(String, default="عام", index=True)
@@ -20,6 +90,7 @@ class Group(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # العلاقات
+    user = relationship("User", back_populates="groups")
     posts = relationship("Post", back_populates="group")
 
     def __repr__(self):
@@ -31,6 +102,7 @@ class Post(Base):
     __tablename__ = "posts"
 
     id             = Column(Integer, primary_key=True, index=True)
+    user_id        = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     group_id       = Column(Integer, ForeignKey("groups.id"), nullable=False)
     content        = Column(Text, nullable=False)
     image_path     = Column(String, nullable=True)
@@ -45,6 +117,7 @@ class Post(Base):
     updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     group = relationship("Group", back_populates="posts")
+    user = relationship("User", back_populates="posts")
 
     def __repr__(self):
         return f"<Post(id={self.id}, status='{self.status}')>"
@@ -55,6 +128,7 @@ class PublishPost(Base):
     __tablename__ = "publish_posts"
 
     id                = Column(Integer, primary_key=True, index=True)
+    user_id           = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     text              = Column(Text, nullable=False)
     image_paths       = Column(Text, nullable=True)   # مسارات الصور مفصولة بفاصلة
     video_path        = Column(String, nullable=True)
@@ -71,6 +145,8 @@ class PublishPost(Base):
     created_at        = Column(DateTime, default=datetime.utcnow)
     published_at      = Column(DateTime, nullable=True)
 
+    user = relationship("User", back_populates="publish_posts")
+
     def __repr__(self):
         return f"<PublishPost(id={self.id}, status='{self.status}')>"
 
@@ -80,6 +156,7 @@ class Schedule(Base):
     __tablename__ = "schedules"
 
     id                    = Column(Integer, primary_key=True, index=True)
+    user_id               = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name                  = Column(String, nullable=False)
     schedule_type         = Column(String, nullable=False)  # daily, weekly, custom
     time_slots            = Column(Text, nullable=True)     # JSON: ["09:00", "15:00"]
@@ -101,6 +178,7 @@ class BotLog(Base):
     __tablename__ = "bot_logs"
 
     id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     level      = Column(String, nullable=False)   # info, warning, error
     message    = Column(Text, nullable=False)
     details    = Column(Text, nullable=True)
@@ -109,15 +187,22 @@ class BotLog(Base):
     def __repr__(self):
         return f"<BotLog(level='{self.level}', message='{self.message[:50]}')>"
 
+    user = relationship("User", back_populates="logs")
+
 
 class BotConfig(Base):
     """إعدادات البوت المحفوظة في قاعدة البيانات"""
     __tablename__ = "bot_configs"
 
     id         = Column(Integer, primary_key=True, index=True)
-    key        = Column(String, unique=True, nullable=False, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    key        = Column(String, nullable=False, index=True)
     value      = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_bot_configs_user_key"),)
+
+    user = relationship("User", back_populates="bot_configs")
 
     def __repr__(self):
         return f"<BotConfig(key='{self.key}', value='{self.value}')>"
@@ -128,6 +213,7 @@ class AIInsight(Base):
     __tablename__ = "ai_insights"
 
     id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     # الحقل المخصص لنص التحليل المولد من Gemini
     insight    = Column(Text, nullable=False) 
     # الحقل المخصص للتصنيف (performance, suggestion, warning)
@@ -143,6 +229,7 @@ class Campaign(Base):
     __tablename__ = "campaigns"
 
     id                  = Column(Integer, primary_key=True, index=True)
+    user_id             = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name                = Column(String, nullable=False)
     status              = Column(String, default="draft")  # draft, active, paused, completed
     post_ids            = Column(Text, nullable=True)      # JSON: [1, 2]
@@ -157,6 +244,8 @@ class Campaign(Base):
     completed_at        = Column(DateTime, nullable=True)
     created_at          = Column(DateTime, server_default=func.now())
     updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="campaigns")
 
     def __repr__(self):
         return f"<Campaign(name='{self.name}', status='{self.status}')>"

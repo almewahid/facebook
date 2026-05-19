@@ -1,8 +1,9 @@
 "use client";
 
+import { authFetch } from '../utils/authFetch';
 import React, { useState, useEffect, useRef } from 'react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 function useCountdown(nextPostTime) {
   const [seconds, setSeconds] = useState(null);
@@ -120,7 +121,7 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
       const endpoint = isPublish
         ? `${API_URL}/publish/${targetId}/stop`
         : `${API_URL}/campaigns/${targetId}/stop`;
-      const res = await fetch(endpoint, { method: 'POST' });
+      const res = await authFetch(endpoint, { method: 'POST' });
       if (!res.ok) throw new Error();
       clearInterval(intervalRef.current);
       setData(prev => ({ ...prev, status: 'cancelled' }));
@@ -139,7 +140,7 @@ const CampaignMonitor = ({ campaignId, publishId }) => {
         const endpoint = isPublish
           ? `${API_URL}/publish/${targetId}/status`
           : `${API_URL}/campaigns/${targetId}/live-status`;
-        const res = await fetch(endpoint);
+        const res = await authFetch(endpoint);
         if (!res.ok) throw new Error();
         const result = await res.json();
         setData(result);

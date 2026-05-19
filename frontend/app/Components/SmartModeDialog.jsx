@@ -1,9 +1,10 @@
 'use client';
 
+import { authFetch } from '../utils/authFetch';
 import React, { useState, useEffect } from 'react';
 import { Brain, Sparkles, RefreshCw, Copy, Check, MessageSquare, AlertTriangle, TrendingUp, Clock } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 export default function SmartModeDialog({ open, onClose }) {
   const [tab, setTab] = useState('insights'); // insights | generator
@@ -25,7 +26,7 @@ export default function SmartModeDialog({ open, onClose }) {
   const fetchInsights = async () => {
     setLoadingInsights(true);
     try {
-      const res = await fetch(`${API_URL}/stats/ai/insights`);
+      const res = await authFetch(`${API_URL}/stats/ai/insights`);
       if (res.ok) {
         const data = await res.json();
         // تم تحديث البيانات لتتوافق مع هيكل قاعدة البيانات الجديد (AIInsight)
@@ -40,7 +41,7 @@ export default function SmartModeDialog({ open, onClose }) {
   const triggerAnalysis = async () => {
     setAnalyzing(true);
     try {
-      const res = await fetch(`${API_URL}/stats/ai/analyze`, { method: 'POST' });
+      const res = await authFetch(`${API_URL}/stats/ai/analyze`, { method: 'POST' });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || 'Failed');
@@ -59,7 +60,7 @@ export default function SmartModeDialog({ open, onClose }) {
     try {
       const form = new FormData();
       form.append('context', context);
-      const res = await fetch(`${API_URL}/stats/ai/generate`, {
+      const res = await authFetch(`${API_URL}/stats/ai/generate`, {
         method: 'POST',
         body: form
       });

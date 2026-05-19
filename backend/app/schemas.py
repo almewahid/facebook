@@ -2,6 +2,80 @@ from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional, List
 
+# ==================== Auth / SaaS Schemas ====================
+
+class UserCreate(BaseModel):
+    email: str
+    password: str = Field(..., min_length=8)
+    full_name: Optional[str] = None
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class GoogleLogin(BaseModel):
+    credential: str
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    full_name: Optional[str] = None
+    role: str
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+class SubscriptionResponse(BaseModel):
+    id: int
+    user_id: int
+    plan: str
+    status: str
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    payment_method: Optional[str] = None
+    payment_reference: Optional[str] = None
+    provider: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ManualPaymentCreate(BaseModel):
+    plan: str = Field(..., pattern="^(monthly|yearly)$")
+    payment_method: str = "manual"
+    payment_reference: Optional[str] = None
+    proof_url: Optional[str] = None
+
+class PaymentResponse(BaseModel):
+    id: int
+    user_id: int
+    subscription_id: Optional[int] = None
+    plan: str
+    status: str
+    payment_method: str
+    payment_reference: Optional[str] = None
+    proof_url: Optional[str] = None
+    provider: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class AdminActivateSubscription(BaseModel):
+    plan: str = Field(..., pattern="^(monthly|yearly)$")
+    payment_id: Optional[int] = None
+    payment_reference: Optional[str] = None
+
+class AdminUpdateUserRole(BaseModel):
+    role: str = Field(..., pattern="^(user|admin)$")
+
 # ==================== Group Schemas ====================
 
 class GroupBase(BaseModel):

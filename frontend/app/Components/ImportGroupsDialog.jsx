@@ -60,15 +60,16 @@ export default function ImportGroupsDialog({
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h3 className="font-bold mb-2 text-blue-900">📋 صيغة الملف:</h3>
             <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
-              <li><strong>name</strong>: اسم المجموعة (إجباري)</li>
-              <li><strong>url</strong>: رابط المجموعة (اختياري)</li>
-              <li><strong>is_active</strong>: نشط؟ (اختياري، افتراضي true)</li>
+              <li><strong>اسم المجموعة</strong> أو <strong>name</strong>: إجباري</li>
+              <li><strong>القائمة / التصنيف</strong> أو <strong>category</strong>: اختياري</li>
+              <li><strong>رابط المجموعة</strong> أو <strong>url</strong>: اختياري</li>
+              <li><strong>is_active</strong>: اختياري، افتراضي true</li>
             </ul>
             
             <div className="mt-4 bg-white rounded p-3 font-mono text-xs overflow-x-auto">
-              <div className="text-gray-500">name,url,is_active</div>
-              <div>سوق الكويت,https://facebook.com/groups/...,true</div>
-              <div>وظائف الكويت,,true</div>
+              <div className="text-gray-500">اسم المجموعة | القائمة / التصنيف | رابط المجموعة</div>
+              <div>محبي القرآن الكريم | قرآن | https://facebook.com/groups/example1</div>
+              <div>أهل الذكر | أذكار | https://facebook.com/groups/example2</div>
             </div>
           </div>
           

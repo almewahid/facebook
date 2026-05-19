@@ -1,5 +1,6 @@
 'use client';
 
+import { authFetch } from '../../utils/authFetch';
 import { useState, useRef, useEffect } from 'react';
 import { X, Share2, FilePlus2 } from 'lucide-react';
 import PublishForm from './PublishForm';
@@ -33,7 +34,7 @@ async function readApiError(response) {
 
 async function resetSafetyPause() {
   try {
-    await fetch(`${API_URL}/bot/safety-reset`, { method: 'POST' });
+    await authFetch(`${API_URL}/bot/safety-reset`, { method: 'POST' });
   } catch {
     // If the reset endpoint is unavailable, continue and let the publish request report the real state.
   }
@@ -90,7 +91,7 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
   const fetchGroups = async () => {
     setLoadingGroups(true);
     try {
-      const res = await fetch(`${API_URL}/groups`);
+      const res = await authFetch(`${API_URL}/groups`);
       if (!res.ok) throw new Error();
       setGroups(await res.json());
     } catch (_) { }
@@ -166,9 +167,9 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
           campaignForm.append('schedule_times', JSON.stringify(campaignData.schedule_times));
           campaignForm.append('rest_days', JSON.stringify(campaignData.rest_days));
           images.forEach(img => campaignForm.append('images', img.file));
-          res = await fetch(`${API_URL}/campaigns/media`, { method: 'POST', body: campaignForm });
+          res = await authFetch(`${API_URL}/campaigns/media`, { method: 'POST', body: campaignForm });
         } else {
-          res = await fetch(`${API_URL}/campaigns`, {
+          res = await authFetch(`${API_URL}/campaigns`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(campaignData),
@@ -207,7 +208,7 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
       images.forEach(img => formData.append('images', img.file));
       if (video) formData.append('video', video.file);
 
-      const res = await fetch(`${API_URL}/publish-safe`, { method: 'POST', body: formData });
+      const res = await authFetch(`${API_URL}/publish-safe`, { method: 'POST', body: formData });
       if (!res.ok) {
         throw new Error(await readApiError(res));
       }
@@ -240,7 +241,7 @@ export default function PublishDialog({ show, onClose, onSuccess, existingCatego
     pollRef.current = setInterval(async () => {
       pollCountRef.current += 1;
       try {
-        const statusRes = await fetch(endpoint);
+        const statusRes = await authFetch(endpoint);
         if (!statusRes.ok) throw new Error('فشل جلب الحالة');
         const statusData = await statusRes.json();
 

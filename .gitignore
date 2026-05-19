@@ -80,6 +80,12 @@ alembic/versions/*.pyc
 # ==================== Temporary ====================
 tmp/
 temp/
+.codex_pydeps/
+.codex_pydeps_run/
+.codex_pydeps_local/
+backend/.local_pydeps/
+backend/.venv312/
+backend/.env
 *.tmp
 *.bak
 *.backup

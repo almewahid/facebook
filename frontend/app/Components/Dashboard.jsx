@@ -19,7 +19,7 @@ import SettingsDialog from './SettingsDialog';
 import PublishDialog from './PublishDialog/index';
 import SmartModeDialog from './SmartModeDialog';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 const API_ORIGIN = API_URL.replace(/\/api\/v1\/?$/, '');
 
 function mediaSrc(path) {
@@ -727,7 +727,18 @@ export default function Dashboard({
 
       {/* Dialogs */}
       <SmartModeDialog open={showSmartMode} onClose={() => setShowSmartMode(false)} />
-      <AddGroupDialog show={showAddGroup} onClose={() => setShowAddGroup(false)} newGroup={newGroup} setNewGroup={setNewGroup} onSubmit={onAddGroup} categories={existingCategories} />
+      <AddGroupDialog
+        show={showAddGroup}
+        onClose={() => setShowAddGroup(false)}
+        newGroup={newGroup}
+        setNewGroup={setNewGroup}
+        onSubmit={onAddGroup}
+        onImportClick={() => {
+          setShowAddGroup(false);
+          setShowImportDialog(true);
+        }}
+        categories={existingCategories}
+      />
       <ImportGroupsDialog show={showImportDialog} onClose={() => setShowImportDialog(false)} importFile={importFile} setImportFile={setImportFile} onImport={onImportFile} importResult={importResult} setImportResult={setImportResult} onDownloadTemplate={onDownloadTemplate} />
       <SettingsDialog show={showSettings} onClose={() => setShowSettings(false)} />
       <PublishDialog show={showPublish} onClose={() => setShowPublish(false)} onSuccess={(id, type = 'publish') => { setShowPublish(false); window.open(`/monitor?${type === 'publish' ? 'publishId' : 'campaignId'}=${id}`, '_blank'); }} existingCategories={existingCategories} publishMethod={publishMethod} />

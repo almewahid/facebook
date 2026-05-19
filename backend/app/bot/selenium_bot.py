@@ -164,9 +164,10 @@ class FacebookBot:
     # ──────────────────────────────────────────
     def get_post_content(self):
         try:
-            custom_content = self.db.query(models.BotConfig).filter(
-                models.BotConfig.key == "CUSTOM_POST_CONTENT"
-            ).first()
+            query = self.db.query(models.BotConfig).filter(models.BotConfig.key == "CUSTOM_POST_CONTENT")
+            if getattr(self, "current_user_id", None):
+                query = query.filter(models.BotConfig.user_id == self.current_user_id)
+            custom_content = query.first()
             if custom_content and custom_content.value and custom_content.value.strip():
                 return custom_content.value
             return "مرحباً! هذا منشور من البوت الذكي 🤖"
@@ -195,7 +196,10 @@ class FacebookBot:
 
     def _get_config_value(self, key: str, default=None):
         try:
-            saved = self.db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+            query = self.db.query(models.BotConfig).filter(models.BotConfig.key == key)
+            if getattr(self, "current_user_id", None):
+                query = query.filter(models.BotConfig.user_id == self.current_user_id)
+            saved = query.first()
             if saved and saved.value not in (None, ""):
                 return saved.value
         except Exception:
@@ -214,11 +218,14 @@ class FacebookBot:
 
     def _set_config_value(self, key: str, value: str):
         try:
-            saved = self.db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+            query = self.db.query(models.BotConfig).filter(models.BotConfig.key == key)
+            if getattr(self, "current_user_id", None):
+                query = query.filter(models.BotConfig.user_id == self.current_user_id)
+            saved = query.first()
             if saved:
                 saved.value = value
             else:
-                self.db.add(models.BotConfig(key=key, value=value))
+                self.db.add(models.BotConfig(key=key, value=value, user_id=getattr(self, "current_user_id", None)))
             self.db.commit()
         except Exception:
             self.db.rollback()
@@ -227,6 +234,7 @@ class FacebookBot:
         start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         try:
             return self.db.query(models.Post).filter(
+                models.Post.user_id == getattr(self, "current_user_id", None),
                 models.Post.status == "success",
                 models.Post.posted_at >= start_of_day
             ).count()
@@ -313,7 +321,7 @@ class FacebookBot:
 
     def log_event(self, level: str, message: str, details: str = None):
         try:
-            log = models.BotLog(level=level, message=message, details=details)
+            log = models.BotLog(level=level, message=message, details=details, user_id=getattr(self, "current_user_id", None))
             self.db.add(log)
             self.db.commit()
         except Exception:
@@ -323,14 +331,16 @@ class FacebookBot:
         """
         يبحث أولاً بالاسم، وإن لم يجد يبحث بالـ URL كـ fallback.
         """
-        group = self.db.query(models.Group).filter(
-            models.Group.name == group_name
-        ).first()
+        query = self.db.query(models.Group).filter(models.Group.name == group_name)
+        if getattr(self, "current_user_id", None):
+            query = query.filter(models.Group.user_id == self.current_user_id)
+        group = query.first()
 
         if not group:
-            group = self.db.query(models.Group).filter(
-                models.Group.url.contains(group_name)
-            ).first()
+            query = self.db.query(models.Group).filter(models.Group.url.contains(group_name))
+            if getattr(self, "current_user_id", None):
+                query = query.filter(models.Group.user_id == self.current_user_id)
+            group = query.first()
             if group:
                 print(f"⚠️ وُجدت المجموعة عبر URL بدلاً من الاسم: {group_name}")
 
@@ -410,11 +420,14 @@ class FacebookBot:
 
         normalized = value.rstrip('/')
         slug = normalized.split('/')[-1]
-        group = self.db.query(models.Group).filter(
+        query = self.db.query(models.Group).filter(
             (models.Group.url == value) |
             (models.Group.url == normalized) |
             (models.Group.url.contains(slug))
-        ).first()
+        )
+        if getattr(self, "current_user_id", None):
+            query = query.filter(models.Group.user_id == self.current_user_id)
+        group = query.first()
 
         return group.name if group else slug
 
@@ -741,6 +754,7 @@ class FacebookBot:
                 posted_at = datetime.now() if status == "success" else None
 
                 new_post = models.Post(
+                    user_id=getattr(self, "current_user_id", None),
                     group_id=group.id,
                     content=text,
                     status=status,
@@ -755,7 +769,8 @@ class FacebookBot:
                     log = models.BotLog(
                         level="error" if status == "failed" else "warning",
                         message=f"النتيجة في {group_name}: {status}",
-                        details=f"Error: {error} | Duration: {round(duration, 2)}s"
+                        details=f"Error: {error} | Duration: {round(duration, 2)}s",
+                        user_id=getattr(self, "current_user_id", None),
                     )
                     self.db.add(log)
 
@@ -784,7 +799,10 @@ class FacebookBot:
         print(f"{'='*70}")
         self.log_event("info", f"بدء الدورة رقم {self.cycle_counter}")
 
-        groups = self.db.query(models.Group).filter(models.Group.is_active == True).all()
+        query = self.db.query(models.Group).filter(models.Group.is_active == True)
+        if getattr(self, "current_user_id", None):
+            query = query.filter(models.Group.user_id == self.current_user_id)
+        groups = query.all()
         if not groups:
             print("⚠️ لا توجد مجموعات نشطة")
             return

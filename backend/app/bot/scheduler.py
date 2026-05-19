@@ -60,6 +60,7 @@ class BotScheduler:
             # 1. معالجة الحملات المجدولة النشطة
             campaigns = db.query(models.Campaign).filter(models.Campaign.status == "active").all()
             for campaign in campaigns:
+                self.bot.current_user_id = campaign.user_id
                 if self.bot.should_stop_for_safety():
                     break
                 self._process_campaign(db, campaign)
@@ -67,6 +68,7 @@ class BotScheduler:
             # 2. معالجة النشر اليدوي الفوري
             pending_manual = db.query(models.PublishPost).filter(models.PublishPost.status == "pending").all()
             for post in pending_manual:
+                self.bot.current_user_id = post.user_id
                 if self.bot.should_stop_for_safety():
                     break
                 self._process_manual_post(db, post)
@@ -94,6 +96,7 @@ class BotScheduler:
                     level="warning",
                     message=f"تم إيقاف الحملة [{campaign.name}] مؤقتاً لحماية الحساب",
                     details=f"campaign_id={campaign.id}"
+                    , user_id=campaign.user_id
                 ))
                 changed = True
                 break
@@ -124,7 +127,10 @@ class BotScheduler:
                     group_identifier = item.get('group_name') or item.get('group_url')
                     success_post = self.bot.post_to_group(group_identifier, campaign.id)
                 else:
-                    post_meta = db.query(models.Post).filter(models.Post.id == item.get('assigned_post_id')).first()
+                    post_meta = db.query(models.Post).filter(
+                        models.Post.id == item.get('assigned_post_id'),
+                        models.Post.user_id == campaign.user_id,
+                    ).first()
                     if post_meta:
                         success_post = self.bot.post_new_content_to_group(
                             group_name=item.get('group_name'),
@@ -137,7 +143,8 @@ class BotScheduler:
                         db.add(models.BotLog(
                             level="error",
                             message=f"محتوى الحملة غير موجود للمجموعة: {item.get('group_name')}",
-                            details=f"campaign_id={campaign.id}"
+                            details=f"campaign_id={campaign.id}",
+                            user_id=campaign.user_id,
                         ))
 
                 if success_post and success_post.status == "success":
@@ -147,14 +154,16 @@ class BotScheduler:
                     db.add(models.BotLog(
                         level="info",
                         message=f"تم نشر بند من الحملة في: {item.get('group_name')}",
-                        details=f"campaign_id={campaign.id} | method={publish_method} | post_id={success_post.id}"
+                        details=f"campaign_id={campaign.id} | method={publish_method} | post_id={success_post.id}",
+                        user_id=campaign.user_id,
                     ))
                 else:
                     item['status'] = "failed"
                     db.add(models.BotLog(
                         level="error",
                         message=f"فشل بند من الحملة في: {item.get('group_name')}",
-                        details=f"campaign_id={campaign.id} | method={publish_method}"
+                        details=f"campaign_id={campaign.id} | method={publish_method}",
+                        user_id=campaign.user_id,
                     ))
 
                 if self.bot.should_stop_for_safety():
@@ -162,7 +171,8 @@ class BotScheduler:
                     db.add(models.BotLog(
                         level="warning",
                         message=f"توقف تنفيذ الحملة [{campaign.name}] لحماية الحساب",
-                        details=f"campaign_id={campaign.id} | method={publish_method}"
+                        details=f"campaign_id={campaign.id} | method={publish_method}",
+                        user_id=campaign.user_id,
                     ))
                     changed = True
                     break
@@ -187,7 +197,10 @@ class BotScheduler:
             return
 
         target_ids = [int(i) for i in post.target_group_ids.split(",") if i]
-        groups = db.query(models.Group).filter(models.Group.id.in_(target_ids)).all()
+        groups = db.query(models.Group).filter(
+            models.Group.id.in_(target_ids),
+            models.Group.user_id == post.user_id,
+        ).all()
 
         post.status = "publishing"
         db.commit()
@@ -205,7 +218,8 @@ class BotScheduler:
                 db.add(models.BotLog(
                     level="warning",
                     message="تم إيقاف النشر اليدوي لحماية الحساب",
-                    details=f"publish_id={post.id}"
+                    details=f"publish_id={post.id}",
+                    user_id=post.user_id,
                 ))
                 db.commit()
                 break
@@ -261,7 +275,8 @@ class BotScheduler:
                 db.add(models.BotLog(
                     level="warning",
                     message="توقف النشر اليدوي بعد تحذير حماية الحساب",
-                    details=f"publish_id={post.id}"
+                    details=f"publish_id={post.id}",
+                    user_id=post.user_id,
                 ))
                 db.commit()
                 break

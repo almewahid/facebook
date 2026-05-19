@@ -5,8 +5,9 @@ import uvicorn
 import os
 from sqlalchemy import text
 from pathlib import Path
+from urllib.parse import urlparse
 
-from app.database import engine, Base
+from app.database import engine, Base, DATABASE_URL
 from app import models
 
 Base.metadata.create_all(bind=engine)
@@ -18,15 +19,35 @@ def ensure_runtime_columns():
         return
 
     required_columns = {
+        "groups": {
+            "user_id": "INTEGER",
+        },
+        "posts": {
+            "user_id": "INTEGER",
+        },
         "campaigns": {
+            "user_id": "INTEGER",
             "publish_method": "VARCHAR DEFAULT 'new_post'",
         },
         "publish_posts": {
+            "user_id": "INTEGER",
             "publish_method": "VARCHAR DEFAULT 'new_post'",
             "is_scheduled": "BOOLEAN DEFAULT 0",
             "scheduled_start_time": "DATETIME",
             "delay_minutes": "INTEGER DEFAULT 5",
             "delay_max_minutes": "INTEGER DEFAULT 5",
+        },
+        "schedules": {
+            "user_id": "INTEGER",
+        },
+        "bot_logs": {
+            "user_id": "INTEGER",
+        },
+        "bot_configs": {
+            "user_id": "INTEGER",
+        },
+        "ai_insights": {
+            "user_id": "INTEGER",
         },
     }
 
@@ -43,7 +64,7 @@ def ensure_runtime_columns():
 
 ensure_runtime_columns()
 
-from app.api.routers import groups, publish, campaigns, bot, stats_logs_config
+from app.api.routers import admin, auth, billing, groups, publish, campaigns, bot, stats_logs_config
 
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", Path(__file__).resolve().parents[1] / "uploaded_media"))
 MEDIA_DIR.mkdir(exist_ok=True)
@@ -67,12 +88,15 @@ app.add_middleware(
         for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
         if origin.strip()
     ],
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origin_regex=r"(https://.*\.vercel\.app|http://(localhost|127\.0\.0\.1):\d+)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(billing.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(publish.router, prefix="/api/v1")
 app.include_router(campaigns.router, prefix="/api/v1")
@@ -99,9 +123,22 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    parsed_database_url = urlparse(DATABASE_URL)
+    database_host = parsed_database_url.hostname or "local"
+    if "supabase" in database_host or "pooler.supabase" in database_host:
+        database_provider = "supabase"
+    elif "neon" in database_host:
+        database_provider = "neon"
+    elif DATABASE_URL.startswith("sqlite"):
+        database_provider = "sqlite"
+    else:
+        database_provider = "postgres"
+
     return {
         "status": "healthy",
-        "database": "connected"
+        "database": "connected",
+        "database_provider": database_provider,
+        "database_host": database_host,
     }
 
 if __name__ == "__main__":

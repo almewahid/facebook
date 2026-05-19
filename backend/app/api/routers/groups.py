@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from typing import List
@@ -7,9 +8,41 @@ import io
 import pandas as pd
 
 from app.database import get_db
+from app.deps import get_current_user
 from app import models, schemas
 
 router = APIRouter(prefix="/groups", tags=["groups"])
+
+
+COLUMN_ALIASES = {
+    "name": ["name", "اسم المجموعة", "المجموعة", "group_name"],
+    "url": ["url", "رابط المجموعة", "الرابط", "group_url"],
+    "category": ["category", "القائمة / التصنيف", "القائمة", "التصنيف"],
+    "is_active": ["is_active", "نشط", "فعال"],
+}
+
+
+def _row_value(row, field: str, default=None):
+    missing = object()
+    for key in COLUMN_ALIASES[field]:
+        try:
+            value = row.get(key, missing)
+        except AttributeError:
+            value = missing
+        if value is not missing and value is not None and (not hasattr(pd, "isna") or not pd.isna(value)):
+            return value
+    return default
+
+
+def _parse_bool(value, default=True) -> bool:
+    if value is None or (hasattr(pd, "isna") and pd.isna(value)):
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("false", "0", "no", "لا", "غير نشط", "معطل"):
+        return False
+    return True
 
 
 def _minutes_since(dt):
@@ -21,10 +54,11 @@ def _minutes_since(dt):
     return max(0, int((now - dt).total_seconds() // 60))
 
 
-def _group_with_last_post(group: models.Group, db: Session):
+def _group_with_last_post(group: models.Group, db: Session, user_id: int):
     last_post = (
         db.query(models.Post)
         .filter(
+            models.Post.user_id == user_id,
             models.Post.group_id == group.id,
             models.Post.status == "success",
             models.Post.posted_at.isnot(None),
@@ -49,40 +83,73 @@ def _group_with_last_post(group: models.Group, db: Session):
 
 
 @router.post("", response_model=schemas.GroupResponse, status_code=status.HTTP_201_CREATED)
-def create_group(group: schemas.GroupCreate, db: Session = Depends(get_db)):
+def create_group(
+    group: schemas.GroupCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """إنشاء مجموعة جديدة مع دعم التصنيفات"""
-    existing = db.query(models.Group).filter(models.Group.name == group.name).first()
+    existing = db.query(models.Group).filter(
+        models.Group.user_id == current_user.id,
+        models.Group.name == group.name,
+    ).first()
     if existing:
         raise HTTPException(status_code=400, detail="المجموعة موجودة بالفعل")
 
     group_data = group.model_dump()
-    db_group = models.Group(**group_data)
+    db_group = models.Group(**group_data, user_id=current_user.id)
     db.add(db_group)
-    db.commit()
-    db.refresh(db_group)
+    try:
+        db.commit()
+        db.refresh(db_group)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"تعذر حفظ المجموعة في قاعدة البيانات: {exc.__class__.__name__}")
     return db_group
 
 
 @router.get("", response_model=List[schemas.GroupResponse])
-def get_groups(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_groups(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """الحصول على كل المجموعات"""
-    groups = db.query(models.Group).order_by(models.Group.id.desc()).offset(skip).limit(limit).all()
-    return [_group_with_last_post(group, db) for group in groups]
+    groups = db.query(models.Group).filter(
+        models.Group.user_id == current_user.id
+    ).order_by(models.Group.id.desc()).offset(skip).limit(limit).all()
+    return [_group_with_last_post(group, db, current_user.id) for group in groups]
 
 
 @router.get("/{group_id}", response_model=schemas.GroupResponse)
-def get_group(group_id: int, db: Session = Depends(get_db)):
+def get_group(
+    group_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """الحصول على مجموعة محددة"""
-    group = db.query(models.Group).filter(models.Group.id == group_id).first()
+    group = db.query(models.Group).filter(
+        models.Group.id == group_id,
+        models.Group.user_id == current_user.id,
+    ).first()
     if not group:
         raise HTTPException(status_code=404, detail="المجموعة غير موجودة")
-    return _group_with_last_post(group, db)
+    return _group_with_last_post(group, db, current_user.id)
 
 
 @router.put("/{group_id}", response_model=schemas.GroupResponse)
-def update_group(group_id: int, group_update: schemas.GroupUpdate, db: Session = Depends(get_db)):
+def update_group(
+    group_id: int,
+    group_update: schemas.GroupUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """تحديث بيانات المجموعة (الاسم، الرابط، أو القائمة)"""
-    db_group = db.query(models.Group).filter(models.Group.id == group_id).first()
+    db_group = db.query(models.Group).filter(
+        models.Group.id == group_id,
+        models.Group.user_id == current_user.id,
+    ).first()
     if not db_group:
         raise HTTPException(status_code=404, detail="المجموعة غير موجودة")
 
@@ -96,9 +163,16 @@ def update_group(group_id: int, group_update: schemas.GroupUpdate, db: Session =
 
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_group(group_id: int, db: Session = Depends(get_db)):
+def delete_group(
+    group_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """حذف مجموعة"""
-    db_group = db.query(models.Group).filter(models.Group.id == group_id).first()
+    db_group = db.query(models.Group).filter(
+        models.Group.id == group_id,
+        models.Group.user_id == current_user.id,
+    ).first()
     if not db_group:
         raise HTTPException(status_code=404, detail="المجموعة غير موجودة")
 
@@ -110,7 +184,8 @@ def delete_group(group_id: int, db: Session = Depends(get_db)):
 @router.post("/import/csv", response_model=dict)
 async def import_groups_csv(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     if not file.filename.endswith('.csv'):
         raise HTTPException(400, "يجب أن يكون الملف بصيغة CSV")
@@ -126,21 +201,24 @@ async def import_groups_csv(
 
         for row_num, row in enumerate(csv_reader, start=2):
             try:
-                name = row.get('name', '').strip()
-                url = row.get('url', '').strip() or None
-                is_active = row.get('is_active', 'true').lower() == 'true'
-                category = row.get('category', 'عام').strip() or 'عام'
+                name = str(_row_value(row, 'name', '')).strip()
+                url = str(_row_value(row, 'url', '')).strip() or None
+                is_active = _parse_bool(_row_value(row, 'is_active', True))
+                category = str(_row_value(row, 'category', 'عام')).strip() or 'عام'
 
                 if not name:
                     errors.append(f"السطر {row_num}: اسم المجموعة فارغ")
                     continue
 
-                existing = db.query(models.Group).filter(models.Group.name == name).first()
+                existing = db.query(models.Group).filter(
+                    models.Group.user_id == current_user.id,
+                    models.Group.name == name,
+                ).first()
                 if existing:
                     skipped_count += 1
                     continue
 
-                new_group = models.Group(name=name, url=url, is_active=is_active, category=category)
+                new_group = models.Group(name=name, url=url, is_active=is_active, category=category, user_id=current_user.id)
                 db.add(new_group)
                 added_count += 1
 
@@ -164,7 +242,8 @@ async def import_groups_csv(
 @router.post("/import/excel", response_model=dict)
 async def import_groups_excel(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     if not (file.filename.endswith('.xlsx') or file.filename.endswith('.xls')):
         raise HTTPException(400, "يجب أن يكون الملف بصيغة Excel (.xlsx أو .xls)")
@@ -173,8 +252,8 @@ async def import_groups_excel(
         contents = await file.read()
         df = pd.read_excel(io.BytesIO(contents))
 
-        if 'name' not in df.columns:
-            raise HTTPException(400, "العمود 'name' مطلوب في ملف Excel")
+        if not any(column in df.columns for column in COLUMN_ALIASES["name"]):
+            raise HTTPException(400, "يجب أن يحتوي ملف Excel على عمود name أو اسم المجموعة")
 
         added_count = 0
         skipped_count = 0
@@ -182,22 +261,28 @@ async def import_groups_excel(
 
         for index, row in df.iterrows():
             try:
-                name = str(row.get('name', '')).strip()
-                url = str(row.get('url', '')).strip() if pd.notna(row.get('url')) else None
-                is_active = bool(row.get('is_active', True))
-                category = str(row.get('category', 'عام')).strip() if pd.notna(row.get('category', 'عام')) else 'عام'
+                name = str(_row_value(row, 'name', '')).strip()
+                url_value = _row_value(row, 'url', None)
+                url = str(url_value).strip() if pd.notna(url_value) else None
+                is_active = _parse_bool(_row_value(row, 'is_active', True))
+                category_value = _row_value(row, 'category', 'عام')
+                category = str(category_value).strip() if pd.notna(category_value) else 'عام'
 
                 if not name or name == 'nan':
                     errors.append(f"السطر {index + 2}: اسم المجموعة فارغ")
                     continue
 
-                existing = db.query(models.Group).filter(models.Group.name == name).first()
+                existing = db.query(models.Group).filter(
+                    models.Group.user_id == current_user.id,
+                    models.Group.name == name,
+                ).first()
                 if existing:
                     skipped_count += 1
                     continue
 
                 new_group = models.Group(
                     name=name,
+                    user_id=current_user.id,
                     url=url if url and url != 'nan' else None,
                     is_active=is_active,
                     category=category if category and category != 'nan' else 'عام'
@@ -227,7 +312,8 @@ async def import_groups_excel(
 @router.post("/import/bulk", response_model=dict)
 async def import_groups_bulk(
     data: schemas.GroupBulkImport,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     added_count = 0
     skipped_count = 0
@@ -235,13 +321,17 @@ async def import_groups_bulk(
 
     for idx, group_data in enumerate(data.groups):
         try:
-            existing = db.query(models.Group).filter(models.Group.name == group_data.name).first()
+            existing = db.query(models.Group).filter(
+                models.Group.user_id == current_user.id,
+                models.Group.name == group_data.name,
+            ).first()
             if existing:
                 skipped_count += 1
                 continue
 
             new_group = models.Group(
                 name=group_data.name,
+                user_id=current_user.id,
                 url=group_data.url,
                 is_active=group_data.is_active,
                 category=group_data.category or "عام"

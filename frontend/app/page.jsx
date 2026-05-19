@@ -1,15 +1,424 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { RefreshCw, PlusCircle, ChevronDown } from 'lucide-react';
+import { RefreshCw, PlusCircle, ChevronDown, CreditCard, ShieldCheck, UsersRound, Settings2 } from 'lucide-react';
 import Header from './Components/Header';
 import Sidebar from './Components/Sidebar';
 import Dashboard from './Components/Dashboard';
 import { useAppData } from './hooks/useAppData';
 import SmartScheduleDialog from './Components/SmartScheduleDialog';
 import SmartModeDialog from './Components/SmartModeDialog';
+import { authFetch } from './utils/authFetch';
+import { isSupabaseAuthEnabled } from './utils/supabaseClient';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+
+function AuthPanel({ mode, setMode, error, onLogin, onRegister, onGoogleLogin, onLoginWithGoogle, onClose }) {
+  const [form, setForm] = useState({ full_name: '', email: '', password: '' });
+  const isRegister = mode === 'register';
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !onGoogleLogin) return;
+
+    const renderGoogleButton = () => {
+      const container = document.getElementById('google-signin-button');
+      if (!container || !window.google?.accounts?.id) return;
+      container.innerHTML = '';
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => {
+          if (response?.credential) onGoogleLogin(response.credential);
+        },
+      });
+      window.google.accounts.id.renderButton(container, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        shape: 'rectangular',
+        text: isRegister ? 'signup_with' : 'signin_with',
+        locale: 'ar',
+        width: 360,
+      });
+    };
+
+    if (window.google?.accounts?.id) {
+      renderGoogleButton();
+      return;
+    }
+
+    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', renderGoogleButton, { once: true });
+      return () => existingScript.removeEventListener('load', renderGoogleButton);
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = renderGoogleButton;
+    document.head.appendChild(script);
+  }, [isRegister, onGoogleLogin]);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (isRegister) onRegister(form.full_name, form.email, form.password);
+    else onLogin(form.email, form.password);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6" dir="rtl">
+      <form onSubmit={submit} className="w-full max-w-md bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Facebook Auto Poster</h1>
+            <p className="text-sm text-gray-500 mt-1">{isRegister ? 'إنشاء حساب جديد' : 'تسجيل الدخول إلى حسابك'}</p>
+          </div>
+          {onClose && (
+            <button type="button" onClick={onClose} className="text-sm text-gray-400 hover:text-gray-700">
+              إغلاق
+            </button>
+          )}
+        </div>
+        {isRegister && (
+          <input
+            className="w-full border border-gray-200 rounded-md px-3 py-2"
+            placeholder="الاسم"
+            value={form.full_name}
+            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+          />
+        )}
+        <input
+          className="w-full border border-gray-200 rounded-md px-3 py-2"
+          placeholder="البريد الإلكتروني"
+          type="email"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          required
+        />
+        <input
+          className="w-full border border-gray-200 rounded-md px-3 py-2"
+          placeholder="كلمة المرور"
+          type="password"
+          value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })}
+          required
+        />
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-md py-2 font-medium">
+          {isRegister ? 'إنشاء الحساب' : 'دخول'}
+        </button>
+        <div className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-gray-100" />
+          <span className="text-xs text-gray-400">أو</span>
+          <span className="h-px flex-1 bg-gray-100" />
+        </div>
+        {isSupabaseAuthEnabled ? (
+          <button
+            type="button"
+            onClick={onLoginWithGoogle}
+            className="w-full rounded-md border border-gray-200 bg-white py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
+          >
+            المتابعة باستخدام Google
+          </button>
+        ) : GOOGLE_CLIENT_ID ? (
+          <div id="google-signin-button" className="flex justify-center min-h-10" />
+        ) : (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            تسجيل الدخول بجوجل يحتاج إضافة إعدادات Supabase أو مفاتيح Google في إعدادات التشغيل.
+          </p>
+        )}
+        <button
+          type="button"
+          className="w-full text-sm text-blue-600"
+          onClick={() => setMode(isRegister ? 'login' : 'register')}
+        >
+          {isRegister ? 'لديك حساب؟ سجل الدخول' : 'ليس لديك حساب؟ أنشئ حسابًا'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function SubscriptionPanel({ subscription, onSubmitPayment, onLogout, onClose }) {
+  const [plan, setPlan] = useState('monthly');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [proofUrl, setProofUrl] = useState('');
+  const [message, setMessage] = useState('');
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setMessage('');
+    try {
+      await onSubmitPayment({ plan, payment_reference: paymentReference, proof_url: proofUrl });
+      setMessage('تم إرسال طلب الدفع. سيتم تفعيل الاشتراك من لوحة المدير بعد المراجعة.');
+    } catch {
+      setMessage('تعذر إرسال طلب الدفع حالياً.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6" dir="rtl">
+      <form onSubmit={submit} className="w-full max-w-xl bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">تفعيل الاشتراك</h1>
+            <p className="text-sm text-gray-500 mt-1">اختر الخطة ثم أرسل رقم عملية التحويل ليتم التفعيل يدويًا.</p>
+          </div>
+          <button type="button" onClick={onClose || onLogout} className="text-sm text-gray-500">
+            {onClose ? 'إغلاق' : 'خروج'}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {['monthly', 'yearly'].map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setPlan(item)}
+              className={`border rounded-md p-4 text-right ${plan === item ? 'border-blue-600 bg-blue-50' : 'border-gray-200'}`}
+            >
+              <p className="font-semibold">{item === 'monthly' ? 'شهري' : 'سنوي'}</p>
+              <p className="text-xs text-gray-500 mt-1">{item === 'monthly' ? '30 يوم' : '365 يوم'}</p>
+            </button>
+          ))}
+        </div>
+        <div className="bg-gray-50 border border-gray-200 rounded-md p-4 text-sm text-gray-700">
+          <p className="font-semibold text-gray-900">بيانات الدفع اليدوي</p>
+          <p className="mt-1">رقم العملية هو رقم الإيصال أو المرجع الذي يظهر لك بعد التحويل البنكي أو فودافون كاش أو أي وسيلة دفع يدوية تحددها الإدارة.</p>
+        </div>
+        <input
+          className="w-full border border-gray-200 rounded-md px-3 py-2"
+          placeholder="رقم إيصال التحويل / Transaction ID"
+          value={paymentReference}
+          onChange={(e) => setPaymentReference(e.target.value)}
+        />
+        <input
+          className="w-full border border-gray-200 rounded-md px-3 py-2"
+          placeholder="رابط إثبات الدفع اختياري"
+          value={proofUrl}
+          onChange={(e) => setProofUrl(e.target.value)}
+        />
+        <button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-md py-2 font-medium">إرسال طلب التفعيل</button>
+        {message && <p className="text-sm text-gray-700">{message}</p>}
+        {subscription?.subscription?.status === 'pending' && <p className="text-sm text-amber-700">لديك طلب تفعيل قيد المراجعة.</p>}
+      </form>
+    </div>
+  );
+}
+
+function AdminPanel() {
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadPayments = async () => {
+    setLoading(true);
+    try {
+      const res = await authFetch(`${API_URL}/admin/payments?status=pending`);
+      setPayments(res.ok ? await res.json() : []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadPayments(); }, []);
+
+  const activate = async (payment) => {
+    const res = await authFetch(`${API_URL}/admin/users/${payment.user_id}/subscriptions/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plan: payment.plan,
+        payment_id: payment.id,
+        payment_reference: payment.payment_reference,
+      }),
+    });
+    if (res.ok) loadPayments();
+  };
+
+  return (
+    <section className="p-6">
+      <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold text-gray-900">طلبات تفعيل الاشتراك</h2>
+          <button onClick={loadPayments} className="text-sm text-blue-600">{loading ? 'جاري التحديث...' : 'تحديث'}</button>
+        </div>
+        <div className="space-y-3">
+          {payments.length === 0 && <p className="text-sm text-gray-500">لا توجد طلبات قيد المراجعة.</p>}
+          {payments.map(payment => (
+            <div key={payment.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-md p-3">
+              <div className="text-sm">
+                <p className="font-semibold text-gray-900">مستخدم #{payment.user_id} - {payment.plan === 'yearly' ? 'سنوي' : 'شهري'}</p>
+                <p className="text-gray-500">رقم العملية: {payment.payment_reference || 'غير مضاف'}</p>
+              </div>
+              <button onClick={() => activate(payment)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md px-4 py-2 text-sm">
+                تفعيل
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AdminControlPanel({ setView, user }) {
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  const loadUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const res = await authFetch(`${API_URL}/admin/users`);
+      setUsers(res.ok ? await res.json() : []);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  useEffect(() => { loadUsers(); }, []);
+
+  const updateRole = async (targetUser, role) => {
+    const res = await authFetch(`${API_URL}/admin/users/${targetUser.id}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    if (res.ok) loadUsers();
+  };
+
+  const cards = [
+    {
+      icon: CreditCard,
+      title: 'طلبات الاشتراك',
+      desc: 'مراجعة المدفوعات اليدوية وتفعيل الاشتراكات.',
+      action: 'فتح الطلبات',
+      onClick: () => setView('admin'),
+    },
+    {
+      icon: UsersRound,
+      title: 'المستخدمون',
+      desc: 'تجهيز صفحة إدارة المستخدمين والخطط في المرحلة التالية.',
+      action: 'قريبًا',
+      onClick: null,
+    },
+    {
+      icon: Settings2,
+      title: 'إعدادات المنصة',
+      desc: 'مكان لاحق لإعداد بيانات الدفع والخطط والصلاحيات.',
+      action: 'قريبًا',
+      onClick: null,
+    },
+  ];
+
+  return (
+    <section className="p-6 space-y-5">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">صفحة التحكم</h1>
+        <p className="text-xs text-gray-400 mt-1">إدارة الاشتراكات والمستخدمين وإعدادات المنصة من مكان واحد.</p>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-slate-100 p-3 text-slate-700">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-900">مرحبًا {user?.full_name || user?.email || 'بالمدير'}</p>
+            <p className="text-xs text-gray-400 mt-1">هذه الصفحة تظهر لحسابات الإدارة فقط.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {cards.map(({ icon: Icon, title, desc, action, onClick }) => (
+          <div key={title} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <Icon className="h-5 w-5" />
+            </div>
+            <h2 className="text-sm font-bold text-gray-900">{title}</h2>
+            <p className="mt-2 min-h-10 text-xs leading-5 text-gray-500">{desc}</p>
+            <button
+              type="button"
+              disabled={!onClick}
+              onClick={onClick || undefined}
+              className={`mt-4 w-full rounded-md px-4 py-2 text-xs font-bold ${
+                onClick
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'cursor-not-allowed bg-gray-100 text-gray-400'
+              }`}
+            >
+              {action}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">المستخدمون وصلاحيات الإدارة</h2>
+            <p className="mt-1 text-xs text-gray-400">يمكن للمدير ترقية أي حساب إلى Admin من هنا.</p>
+          </div>
+          <button onClick={loadUsers} className="rounded-md border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50">
+            {loadingUsers ? 'تحديث...' : 'تحديث'}
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-right text-xs">
+            <thead className="bg-gray-50 text-gray-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">المستخدم</th>
+                <th className="px-4 py-3 font-medium">الدور</th>
+                <th className="px-4 py-3 font-medium">الحالة</th>
+                <th className="px-4 py-3 font-medium text-center">إجراء</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="px-4 py-8 text-center text-gray-400">لا توجد بيانات مستخدمين.</td>
+                </tr>
+              )}
+              {users.map((item) => (
+                <tr key={item.id}>
+                  <td className="px-4 py-3">
+                    <p className="font-bold text-gray-800">{item.full_name || 'بدون اسم'}</p>
+                    <p className="mt-0.5 text-gray-400">{item.email}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-1 font-bold ${item.role === 'admin' ? 'bg-slate-100 text-slate-800' : 'bg-blue-50 text-blue-700'}`}>
+                      {item.role === 'admin' ? 'Admin' : 'User'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">{item.is_active ? 'نشط' : 'موقوف'}</td>
+                  <td className="px-4 py-3 text-center">
+                    {item.role === 'admin' ? (
+                      <button
+                        disabled={item.id === user?.id}
+                        onClick={() => updateRole(item, 'user')}
+                        className="rounded-md border border-gray-200 px-3 py-2 font-bold text-gray-500 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        جعله مستخدم
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => updateRole(item, 'admin')}
+                        className="rounded-md bg-slate-900 px-3 py-2 font-bold text-white hover:bg-slate-800"
+                      >
+                        جعله أدمن
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // ── قائمة إدارة المجموعات المنسدلة ──────────────────────
 function GroupActionsMenu({ onAddGroup, onImport, onBulkAdd }) {
@@ -77,6 +486,8 @@ export default function Page() {
   const [showPublish,      setShowPublish]      = useState(false);
   const [showSmartMode,    setShowSmartMode]    = useState(false);
   const [showAddCategory,  setShowAddCategory]  = useState(false);
+  const [showAuthGate,     setShowAuthGate]     = useState(false);
+  const [showSubscriptionGate, setShowSubscriptionGate] = useState(false);
 
   const [newGroup,        setNewGroup]        = useState({ name: '', url: '', is_active: true, category: 'عام' });
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -84,41 +495,79 @@ export default function Page() {
   const [bulkGroups,      setBulkGroups]      = useState('');
   const [importFile,      setImportFile]      = useState(null);
   const [importResult,    setImportResult]    = useState(null);
+  const subscriptionRequired = appData.token && !appData.subscription?.active && appData.user?.role !== 'admin';
 
-  const onAddGroupSubmit = () => {
-    appData.handleAddGroup(newGroup, () => {
+  useEffect(() => {
+    if (appData.token) setShowAuthGate(false);
+  }, [appData.token]);
+
+  useEffect(() => {
+    if ((view === 'admin' || view === 'admin-control') && appData.user?.role !== 'admin') setView('dashboard');
+  }, [view, appData.user?.role]);
+
+  const requireLogin = (action) => (...args) => {
+    if (!appData.token) {
+      setShowAuthGate(true);
+      return undefined;
+    }
+    return action?.(...args);
+  };
+
+  const requireServiceAccess = (action) => (...args) => {
+    if (!appData.token) {
+      setShowAuthGate(true);
+      return undefined;
+    }
+    if (subscriptionRequired) {
+      setShowSubscriptionGate(true);
+      return undefined;
+    }
+    return action?.(...args);
+  };
+
+  const guardedSetDialog = (setter) => (value) => {
+    if (value) requireLogin(() => setter(true))();
+    else setter(false);
+  };
+
+  const guardedServiceDialog = (setter) => (value) => {
+    if (value) requireServiceAccess(() => setter(true))();
+    else setter(false);
+  };
+
+  const onAddGroupSubmit = (group = newGroup) => {
+    requireLogin(() => appData.handleAddGroup(group, () => {
       setShowAddGroup(false);
       setNewGroup({ name: '', url: '', is_active: true, category: 'عام' });
-    });
+    }))();
   };
 
   const onBulkAddSubmit = () => {
-    appData.handleBulkAdd(bulkGroups, newGroup.category, () => {
+    requireLogin(() => appData.handleBulkAdd(bulkGroups, newGroup.category, () => {
       setShowBulkAdd(false);
       setBulkGroups('');
-    });
+    }))();
   };
 
   const handleImportFile = async () => {
+    if (!appData.token) { setShowAuthGate(true); return; }
     if (!importFile) { alert('الرجاء اختيار ملف'); return; }
     const formData = new FormData();
     formData.append('file', importFile);
     const ext = importFile.name.split('.').pop().toLowerCase();
     const endpoint = ext === 'csv' ? `${API_URL}/groups/import/csv` : `${API_URL}/groups/import/excel`;
     try {
-      const response = await fetch(endpoint, { method: 'POST', body: formData });
+      const response = await fetch(endpoint, { method: 'POST', body: formData, headers: appData.authHeaders() });
       const result = await response.json();
       if (result.success) { setImportResult(result); appData.fetchData(); }
-      else alert(`❌ فشل: ${result.errors?.join(', ')}`);
-    } catch { alert('❌ فشل الاستيراد'); }
+      else alert(`❌ فشل: ${result.detail || result.message || result.errors?.join(', ') || 'تعذر استيراد الملف'}`);
+    } catch { alert('❌ فشل الاستيراد. تأكد أن الباكند يعمل على 8001 وأن الملف مطابق للقالب.'); }
   };
 
   const downloadExcelTemplate = () => {
-    const data = [['name','url','is_active','category'],['سوق الكويت','','true','عام'],['وظائف السعودية','','true','وظائف']];
-    const blob = new Blob(['\uFEFF' + data.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'groups_template.csv';
+    link.href = '/templates/نموذج_المجموعات.xlsx';
+    link.download = 'نموذج_المجموعات.xlsx';
     link.click();
   };
 
@@ -140,7 +589,11 @@ export default function Page() {
       <Sidebar
         currentView={view}
         setView={setView}
-        onLogout={appData.logoutFacebook}
+        isLoggedIn={Boolean(appData.token)}
+        isAdmin={appData.user?.role === 'admin'}
+        user={appData.user}
+        onLogin={() => setShowAuthGate(true)}
+        onLogout={appData.logout}
       />
 
       {/* المحتوى الرئيسي مع مسافة للـ Sidebar */}
@@ -148,21 +601,23 @@ export default function Page() {
 
         {/* Header */}
         <Header
-          onSettings={() => setShowSettings(true)}
-          onStopBot={appData.stopBot}
+          onSettings={requireLogin(() => setShowSettings(true))}
+          onStopBot={requireLogin(appData.stopBot)}
           botStatus={appData.botStatus}
           groupActionsMenu={
             <GroupActionsMenu
-              onAddGroup={() => setShowAddGroup(true)}
-              onImport={() => setShowImportDialog(true)}
-              onBulkAdd={() => setShowBulkAdd(true)}
+              onAddGroup={requireLogin(() => setShowAddGroup(true))}
+              onImport={requireLogin(() => setShowImportDialog(true))}
+              onBulkAdd={requireLogin(() => setShowBulkAdd(true))}
             />
           }
         />
 
         {/* Dashboard */}
         <main className="flex-1">
-          <Dashboard
+          {view === 'admin-control' && appData.user?.role === 'admin' ? (
+            <AdminControlPanel setView={setView} user={appData.user} />
+          ) : view === 'admin' && appData.user?.role === 'admin' ? <AdminPanel /> : <Dashboard
             stats={appData.stats}
             groups={appData.groups}
             posts={appData.posts}
@@ -171,15 +626,15 @@ export default function Page() {
             activeCampaignId={activeCampaignId}
             setActiveCampaignId={setActiveCampaignId}
             view={view} setView={setView}
-            showAddGroup={showAddGroup}     setShowAddGroup={setShowAddGroup}
-            showImportDialog={showImportDialog} setShowImportDialog={setShowImportDialog}
-            showBulkAdd={showBulkAdd}       setShowBulkAdd={setShowBulkAdd}
-            showSchedule={showSchedule}     setShowSchedule={setShowSchedule}
+            showAddGroup={showAddGroup}     setShowAddGroup={guardedSetDialog(setShowAddGroup)}
+            showImportDialog={showImportDialog} setShowImportDialog={guardedSetDialog(setShowImportDialog)}
+            showBulkAdd={showBulkAdd}       setShowBulkAdd={guardedSetDialog(setShowBulkAdd)}
+            showSchedule={showSchedule}     setShowSchedule={guardedSetDialog(setShowSchedule)}
             showReport={showReport}         setShowReport={setShowReport}
-            showSettings={showSettings}     setShowSettings={setShowSettings}
-            showPublish={showPublish}        setShowPublish={setShowPublish}
+            showSettings={showSettings}     setShowSettings={guardedSetDialog(setShowSettings)}
+            showPublish={showPublish}        setShowPublish={guardedServiceDialog(setShowPublish)}
             publishMethod={publishMethod}     setPublishMethod={setPublishMethod}
-            showSmartMode={showSmartMode}   setShowSmartMode={setShowSmartMode}
+            showSmartMode={showSmartMode}   setShowSmartMode={guardedSetDialog(setShowSmartMode)}
             showAddCategory={showAddCategory} setShowAddCategory={setShowAddCategory}
             newGroup={newGroup}             setNewGroup={setNewGroup}
             newCategoryName={newCategoryName} setNewCategoryName={setNewCategoryName}
@@ -187,26 +642,50 @@ export default function Page() {
             bulkGroups={bulkGroups}         setBulkGroups={setBulkGroups}
             importFile={importFile}         setImportFile={setImportFile}
             importResult={importResult}     setImportResult={setImportResult}
-            onToggleGroup={appData.toggleGroup}
-            onDeleteGroup={appData.deleteGroup}
+            onToggleGroup={requireLogin(appData.toggleGroup)}
+            onDeleteGroup={requireLogin(appData.deleteGroup)}
             onAddGroup={onAddGroupSubmit}
-            onUpdateGroup={appData.handleUpdateGroup}
+            onUpdateGroup={requireLogin(appData.handleUpdateGroup)}
             onBulkAdd={onBulkAddSubmit}
             onImportFile={handleImportFile}
             onDownloadTemplate={downloadExcelTemplate}
-            onAddCategory={appData.handleAddCategory}
-            onDeleteCategory={appData.handleDeleteCategory}
-          />
+            onAddCategory={requireLogin(appData.handleAddCategory)}
+            onDeleteCategory={requireLogin(appData.handleDeleteCategory)}
+          />}
         </main>
       </div>
 
       <SmartScheduleDialog
         open={showSchedule}
         onClose={() => setShowSchedule(false)}
-        onStartBot={(cfg) => appData.startBot(cfg)}
+        onStartBot={requireLogin((cfg) => appData.startBot(cfg))}
         existingCategories={appData.existingCategories}
       />
       <SmartModeDialog open={showSmartMode} onClose={() => setShowSmartMode(false)} />
+      {showAuthGate && (
+        <div className="fixed inset-0 z-[70] bg-black/40">
+          <AuthPanel
+            mode={appData.authMode}
+            setMode={appData.setAuthMode}
+            error={appData.authError}
+            onLogin={appData.login}
+            onRegister={appData.register}
+            onGoogleLogin={appData.googleLogin}
+            onLoginWithGoogle={appData.loginWithGoogle}
+            onClose={() => setShowAuthGate(false)}
+          />
+        </div>
+      )}
+      {showSubscriptionGate && (
+        <div className="fixed inset-0 z-[70] bg-black/40">
+          <SubscriptionPanel
+            subscription={appData.subscription}
+            onSubmitPayment={appData.submitManualPayment}
+            onLogout={appData.logout}
+            onClose={() => setShowSubscriptionGate(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

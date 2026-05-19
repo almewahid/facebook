@@ -11,6 +11,7 @@ import random
 from pathlib import Path
 
 from app.database import get_db
+from app.deps import require_active_subscription
 from app import models, schemas
 
 router = APIRouter(tags=["publish"])
@@ -53,12 +54,18 @@ def _media_url(image_path: Optional[str]) -> Optional[str]:
     return f"/uploaded_media/{os.path.basename(first_path)}"
 
 
-def _post_response(post: models.Post, db: Session) -> dict:
-    group = db.query(models.Group).filter(models.Group.id == post.group_id).first()
+def _post_response(post: models.Post, db: Session, user_id: int) -> dict:
+    group = db.query(models.Group).filter(
+        models.Group.id == post.group_id,
+        models.Group.user_id == user_id,
+    ).first()
     image_path = post.image_path
 
     if not image_path and post.cycle_number:
-        publish_post = db.query(models.PublishPost).filter(models.PublishPost.id == post.cycle_number).first()
+        publish_post = db.query(models.PublishPost).filter(
+            models.PublishPost.id == post.cycle_number,
+            models.PublishPost.user_id == user_id,
+        ).first()
         if publish_post and publish_post.image_paths:
             image_path = publish_post.image_paths
 
@@ -79,16 +86,19 @@ def _post_response(post: models.Post, db: Session) -> dict:
     }
 
 
-def _safe_min_delay_minutes(db: Session, default: int = 1) -> int:
-    saved = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_MIN_DELAY_MINUTES").first()
+def _safe_min_delay_minutes(db: Session, default: int = 1, user_id: int | None = None) -> int:
+    query = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_MIN_DELAY_MINUTES")
+    if user_id is not None:
+        query = query.filter(models.BotConfig.user_id == user_id)
+    saved = query.first()
     try:
         return max(1, int(saved.value)) if saved and saved.value else default
     except ValueError:
         return default
 
 
-def _normalize_delay_range(db: Session, min_value=None, max_value=None) -> tuple[int, int]:
-    safe_min = _safe_min_delay_minutes(db)
+def _normalize_delay_range(db: Session, min_value=None, max_value=None, user_id: int | None = None) -> tuple[int, int]:
+    safe_min = _safe_min_delay_minutes(db, user_id=user_id)
     try:
         delay_min = int(min_value or safe_min)
     except (TypeError, ValueError):
@@ -103,16 +113,19 @@ def _normalize_delay_range(db: Session, min_value=None, max_value=None) -> tuple
     return delay_min, delay_max
 
 
-def _reset_safety_pause(db: Session):
+def _reset_safety_pause(db: Session, user_id: int):
     for key, value in {
         "SAFETY_PAUSED": "false",
         "SAFETY_PAUSE_REASON": "",
     }.items():
-        saved = db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+        saved = db.query(models.BotConfig).filter(
+            models.BotConfig.key == key,
+            models.BotConfig.user_id == user_id,
+        ).first()
         if saved:
             saved.value = value
         else:
-            db.add(models.BotConfig(key=key, value=value))
+            db.add(models.BotConfig(key=key, value=value, user_id=user_id))
     db.commit()
 
     try:
@@ -150,7 +163,7 @@ def _wait_until_publish_time(db: Session, post: models.PublishPost, publish_time
     return True
 
 
-def _publish_to_groups_task(post_id: int, db_url: str):
+def _publish_to_groups_task(post_id: int, db_url: str, user_id: int):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from app import models
@@ -161,11 +174,17 @@ def _publish_to_groups_task(post_id: int, db_url: str):
     db = SessionLocal()
 
     try:
-        post = db.query(models.PublishPost).filter(models.PublishPost.id == post_id).first()
+        post = db.query(models.PublishPost).filter(
+            models.PublishPost.id == post_id,
+            models.PublishPost.user_id == user_id,
+        ).first()
         if not post:
             return
 
-        query = db.query(models.Group).filter(models.Group.is_active == True)
+        query = db.query(models.Group).filter(
+            models.Group.user_id == user_id,
+            models.Group.is_active == True,
+        )
         if post.target_group_ids:
             ids = [int(i) for i in post.target_group_ids.split(",") if i]
             query = query.filter(models.Group.id.in_(ids))
@@ -180,6 +199,7 @@ def _publish_to_groups_task(post_id: int, db_url: str):
             bot_scheduler._load_saved_config()
             bot = bot_scheduler.bot
             if bot:
+                bot.current_user_id = user_id
                 bot.config.update(bot_scheduler.config)
 
         success_count = 0
@@ -190,6 +210,7 @@ def _publish_to_groups_task(post_id: int, db_url: str):
             db,
             getattr(post, "delay_minutes", 5),
             getattr(post, "delay_max_minutes", None),
+            user_id=user_id,
         )
 
         if getattr(post, "is_scheduled", False) and _now_cairo() < next_publish_time:
@@ -268,14 +289,16 @@ def _publish_to_groups_task(post_id: int, db_url: str):
                     success_count += 1
                     last_post = db.query(models.Post).filter(
                         models.Post.group_id == group.id,
-                        models.Post.cycle_number == post_id
+                        models.Post.cycle_number == post_id,
+                        models.Post.user_id == user_id,
                     ).order_by(models.Post.id.desc()).first()
                     post_url = last_post.post_url if last_post else None
 
                     log = models.BotLog(
                         level="info",
                         message=f"✅ تم النشر في: {group.name}",
-                        details=f"post_id={post_id} | url={post_url}"
+                        details=f"post_id={post_id} | user_id={user_id} | url={post_url}",
+                        user_id=user_id,
                     )
                 elif result and result.status == "skipped":
                     failed_count += 1
@@ -283,7 +306,8 @@ def _publish_to_groups_task(post_id: int, db_url: str):
                     log = models.BotLog(
                         level="warning",
                         message=f"توقف النشر في: {group.name}",
-                        details=f"post_id={post_id} | السبب: {result.error_message or 'تم تخطي النشر لحماية الحساب'}"
+                        details=f"post_id={post_id} | user_id={user_id} | السبب: {result.error_message or 'تم تخطي النشر لحماية الحساب'}",
+                        user_id=user_id,
                     )
                 else:
                     failed_count += 1
@@ -291,7 +315,8 @@ def _publish_to_groups_task(post_id: int, db_url: str):
                     log = models.BotLog(
                         level="error",
                         message=f"❌ فشل النشر في: {group.name}",
-                        details=f"post_id={post_id} | السبب: {getattr(result, 'error_message', None) or 'لم يرجع البوت نتيجة نجاح'}"
+                        details=f"post_id={post_id} | user_id={user_id} | السبب: {getattr(result, 'error_message', None) or 'لم يرجع البوت نتيجة نجاح'}",
+                        user_id=user_id,
                     )
 
             except Exception as e:
@@ -300,7 +325,8 @@ def _publish_to_groups_task(post_id: int, db_url: str):
                 log = models.BotLog(
                     level="error",
                     message=f"❌ فشل النشر في: {group.name}",
-                    details=str(e)
+                    details=str(e),
+                    user_id=user_id,
                 )
 
             db.add(log)
@@ -315,7 +341,8 @@ def _publish_to_groups_task(post_id: int, db_url: str):
                 db.add(models.BotLog(
                     level="warning",
                     message="توقف النشر بسبب حد الحماية اليومي أو حماية الحساب",
-                    details=f"post_id={post_id} | السبب: {safety_reason}"
+                    details=f"post_id={post_id} | user_id={user_id} | السبب: {safety_reason}",
+                    user_id=user_id,
                 ))
                 db.commit()
                 break
@@ -336,22 +363,35 @@ def _publish_to_groups_task(post_id: int, db_url: str):
 
 
 @router.get("/posts", response_model=List[schemas.PostResponse])
-def get_posts(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_posts(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     posts = db.query(models.Post).filter(
+        models.Post.user_id == current_user.id,
         ~(
             models.Post.cycle_number.is_(None)
             & models.Post.status.in_(["pending", "draft"])
         )
     ).order_by(models.Post.created_at.desc()).offset(skip).limit(limit).all()
-    return [_post_response(post, db) for post in posts]
+    return [_post_response(post, db, current_user.id) for post in posts]
 
 
 @router.get("/posts/{post_id}", response_model=schemas.PostResponse)
-def get_post(post_id: int, db: Session = Depends(get_db)):
-    post = db.query(models.Post).filter(models.Post.id == post_id).first()
+def get_post(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    post = db.query(models.Post).filter(
+        models.Post.id == post_id,
+        models.Post.user_id == current_user.id,
+    ).first()
     if not post:
         raise HTTPException(status_code=404, detail="المنشور غير موجود")
-    return _post_response(post, db)
+    return _post_response(post, db, current_user.id)
 
 
 @router.post("/publish", status_code=status.HTTP_202_ACCEPTED)
@@ -369,11 +409,15 @@ async def publish_post(
     second_text: Optional[str] = Form(None),
     publish_method: str = Form("new_post"),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
 ):
-    _reset_safety_pause(db)
+    _reset_safety_pause(db, current_user.id)
     group_ids = await _form_group_ids(request)
 
-    query = db.query(models.Group).filter(models.Group.is_active == True)
+    query = db.query(models.Group).filter(
+        models.Group.user_id == current_user.id,
+        models.Group.is_active == True,
+    )
     if group_ids:
         query = query.filter(models.Group.id.in_(group_ids))
     active_groups_count = query.count()
@@ -384,7 +428,7 @@ async def publish_post(
     method = publish_method if publish_method in ("new_post", "share_page") else "new_post"
     parsed_start_time = _parse_optional_datetime(start_time)
     should_schedule = bool(is_scheduled and parsed_start_time)
-    safe_delay_min, safe_delay_max = _normalize_delay_range(db, delay_minutes, delay_max_minutes)
+    safe_delay_min, safe_delay_max = _normalize_delay_range(db, delay_minutes, delay_max_minutes, user_id=current_user.id)
 
     video_path = None
     if video and method == "new_post":
@@ -403,6 +447,7 @@ async def publish_post(
 
     new_post = models.PublishPost(
         text=text if method == "new_post" else "",
+        user_id=current_user.id,
         image_paths=",".join(image_paths) if image_paths else None,
         video_path=video_path,
         publish_method=method,
@@ -425,7 +470,7 @@ async def publish_post(
         level="info",
         message=f"📢 بدء النشر في {active_groups_count} مجموعة",
         details=(
-            f"post_id={new_post.id} | method={method} | صور={len(image_paths)} | فيديو={'نعم' if video_path else 'لا'}"
+            f"post_id={new_post.id} | user_id={current_user.id} | method={method} | صور={len(image_paths)} | فيديو={'نعم' if video_path else 'لا'}"
             f" | جدولة={is_scheduled} | بدء={start_time or '-'} | تأخير={safe_delay_min}-{safe_delay_max}"
             f" | تدوير={is_rotation} | نص_ثاني={'نعم' if second_text else 'لا'}"
         )
@@ -447,7 +492,7 @@ async def publish_post(
             ))
             db.commit()
     else:
-        background_tasks.add_task(_publish_to_groups_task, new_post.id, DATABASE_URL)
+        background_tasks.add_task(_publish_to_groups_task, new_post.id, DATABASE_URL, current_user.id)
 
     return {
         "status": "accepted",
@@ -472,9 +517,10 @@ async def publish_post_safe(
     background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
 ):
     try:
-        _reset_safety_pause(db)
+        _reset_safety_pause(db, current_user.id)
         form = await request.form()
         text = str(form.get("text") or "").strip()
         if not text:
@@ -484,7 +530,10 @@ async def publish_post_safe(
         method = publish_method if publish_method in ("new_post", "share_page") else "new_post"
         group_ids = await _form_group_ids(request)
 
-        query = db.query(models.Group).filter(models.Group.is_active == True)
+        query = db.query(models.Group).filter(
+            models.Group.user_id == current_user.id,
+            models.Group.is_active == True,
+        )
         if group_ids:
             query = query.filter(models.Group.id.in_(group_ids))
         active_groups_count = query.count()
@@ -495,6 +544,7 @@ async def publish_post_safe(
             db,
             form.get("delay_minutes"),
             form.get("delay_max_minutes"),
+            user_id=current_user.id,
         )
 
         image_paths = []
@@ -514,6 +564,7 @@ async def publish_post_safe(
 
         new_post = models.PublishPost(
             text=text if method == "new_post" else "",
+            user_id=current_user.id,
             image_paths=",".join(image_paths) if image_paths else None,
             video_path=video_path,
             publish_method=method,
@@ -536,14 +587,14 @@ async def publish_post_safe(
             level="info",
             message=f"📢 بدء النشر في {active_groups_count} مجموعة",
             details=(
-                f"post_id={new_post.id} | method={method} | صور={len(image_paths)}"
+                f"post_id={new_post.id} | user_id={current_user.id} | method={method} | صور={len(image_paths)}"
                 f" | فيديو={'نعم' if video_path else 'لا'} | تأخير={safe_delay_min}-{safe_delay_max}"
             )
         ))
         db.commit()
 
         from app.database import DATABASE_URL
-        background_tasks.add_task(_publish_to_groups_task, new_post.id, DATABASE_URL)
+        background_tasks.add_task(_publish_to_groups_task, new_post.id, DATABASE_URL, current_user.id)
 
         return {
             "status": "accepted",
@@ -575,9 +626,16 @@ async def publish_post_safe(
 
 
 @router.get("/publish/{post_id}/status")
-def get_publish_status(post_id: int, db: Session = Depends(get_db)):
+def get_publish_status(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """متابعة حالة النشر الفوري مع عرض التنبيهات التقنية اللحظية"""
-    post = db.query(models.PublishPost).filter(models.PublishPost.id == post_id).first()
+    post = db.query(models.PublishPost).filter(
+        models.PublishPost.id == post_id,
+        models.PublishPost.user_id == current_user.id,
+    ).first()
     if not post:
         raise HTTPException(status_code=404, detail="المنشور غير موجود")
 
@@ -589,6 +647,7 @@ def get_publish_status(post_id: int, db: Session = Depends(get_db)):
 
     recent_logs = db.query(models.BotLog).filter(
         models.BotLog.details.contains(f"post_id={post_id}")
+        , models.BotLog.user_id == current_user.id
     ).order_by(models.BotLog.created_at.desc()).limit(3).all()
 
     target_ids = []
@@ -597,11 +656,15 @@ def get_publish_status(post_id: int, db: Session = Depends(get_db)):
 
     results = []
     if target_ids:
-        groups = db.query(models.Group).filter(models.Group.id.in_(target_ids)).all()
+        groups = db.query(models.Group).filter(
+            models.Group.id.in_(target_ids),
+            models.Group.user_id == current_user.id,
+        ).all()
         for group in groups:
             last_post = db.query(models.Post).filter(
                 models.Post.group_id == group.id,
                 models.Post.cycle_number == post_id,
+                models.Post.user_id == current_user.id,
                 models.Post.created_at >= post.created_at
             ).order_by(models.Post.id.desc()).first()
 
@@ -646,8 +709,15 @@ def get_publish_status(post_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/publish/{post_id}/stop")
-def stop_publish_post(post_id: int, db: Session = Depends(get_db)):
-    post = db.query(models.PublishPost).filter(models.PublishPost.id == post_id).first()
+def stop_publish_post(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    post = db.query(models.PublishPost).filter(
+        models.PublishPost.id == post_id,
+        models.PublishPost.user_id == current_user.id,
+    ).first()
     if not post:
         raise HTTPException(status_code=404, detail="المنشور غير موجود")
 
@@ -660,14 +730,19 @@ def stop_publish_post(post_id: int, db: Session = Depends(get_db)):
     log = models.BotLog(
         level="info",
         message=f"⏹ تم إيقاف المنشور #{post_id} يدوياً",
-        details=f"post_id={post_id}"
+        details=f"post_id={post_id} | user_id={current_user.id}",
+        user_id=current_user.id,
     )
     db.add(log)
     db.commit()
 
     from app.bot.scheduler import bot_scheduler
-    active_campaigns = db.query(models.Campaign).filter(models.Campaign.status == "active").count()
+    active_campaigns = db.query(models.Campaign).filter(
+        models.Campaign.user_id == current_user.id,
+        models.Campaign.status == "active",
+    ).count()
     active_posts = db.query(models.PublishPost).filter(
+        models.PublishPost.user_id == current_user.id,
         models.PublishPost.id != post_id,
         models.PublishPost.status.in_(["pending", "publishing"])
     ).count()
@@ -685,9 +760,16 @@ def stop_publish_post(post_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/publish", response_model=List[dict])
-def list_publish_posts(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+def list_publish_posts(
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """قائمة بجميع المنشورات المرسلة"""
-    posts = db.query(models.PublishPost).order_by(
+    posts = db.query(models.PublishPost).filter(
+        models.PublishPost.user_id == current_user.id
+    ).order_by(
         models.PublishPost.created_at.desc()
     ).offset(skip).limit(limit).all()
 

@@ -6,6 +6,7 @@ import json
 import random
 
 from app.database import get_db
+from app.deps import require_active_subscription
 from app import models, schemas
 from app.bot.scheduler import bot_scheduler
 from app.api.routers.publish import _safe_min_delay_minutes, _save_uploaded_file
@@ -109,8 +110,12 @@ def _create_campaign_record(
     publish_method: str = "new_post",
     schedule_times: Optional[List[str]] = None,
     rest_days: Optional[List[str]] = None,
+    user_id: int = None,
 ):
-    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    groups = db.query(models.Group).filter(
+        models.Group.id.in_(group_ids),
+        models.Group.user_id == user_id,
+    ).all()
     if not groups:
         raise HTTPException(status_code=400, detail="المجموعات المحددة غير موجودة")
 
@@ -122,13 +127,14 @@ def _create_campaign_record(
     if method == "new_post" and not resolved_post_ids and not clean_texts:
         raise HTTPException(status_code=400, detail="يجب إرسال نص منشور واحد على الأقل أو معرف منشور محفوظ")
 
-    delay_between_posts = max(_safe_min_delay_minutes(db), int(delay_between_posts or 0))
+    delay_between_posts = max(_safe_min_delay_minutes(db, user_id=user_id), int(delay_between_posts or 0))
 
     if clean_texts:
         first_group_id = groups[0].id
         for idx, content in enumerate(clean_texts):
             image_path = media_paths[idx % len(media_paths)] if media_paths else None
             draft_post = models.Post(
+                user_id=user_id,
                 group_id=first_group_id,
                 content=content,
                 image_path=image_path,
@@ -172,6 +178,7 @@ def _create_campaign_record(
         current_time += timedelta(minutes=delay_between_posts, seconds=random_extra_seconds)
 
     new_campaign = models.Campaign(
+        user_id=user_id,
         name=name,
         status="active",
         post_ids=json.dumps(resolved_post_ids),
@@ -181,7 +188,7 @@ def _create_campaign_record(
         delay_between_posts=delay_between_posts,
         total_groups=len(groups),
         sent_count=0,
-        created_by="admin@example.com",
+        created_by=str(user_id),
         # ✅ إصلاح 1
         created_at=now_cairo(),
     )
@@ -193,7 +200,8 @@ def _create_campaign_record(
     log = models.BotLog(
         level="info",
         message=f"📋 إنشاء حملة: {new_campaign.name} (طريقة: {method})",
-        details=f"ID: {new_campaign.id} | campaign_id={new_campaign.id} | method={method} | مجموعات: {len(groups)} | تأخير: {delay_between_posts} دقيقة"
+        details=f"ID: {new_campaign.id} | campaign_id={new_campaign.id} | user_id={user_id} | method={method} | مجموعات: {len(groups)} | تأخير: {delay_between_posts} دقيقة",
+        user_id=user_id,
     )
     db.add(log)
     db.commit()
@@ -219,7 +227,11 @@ def _create_campaign_record(
 
 
 @router.post("", response_model=schemas.CampaignResponse, status_code=status.HTTP_201_CREATED)
-def create_campaign(campaign_data: schemas.CampaignCreate, db: Session = Depends(get_db)):
+def create_campaign(
+    campaign_data: schemas.CampaignCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     return _create_campaign_record(
         db=db,
         name=campaign_data.name,
@@ -232,6 +244,7 @@ def create_campaign(campaign_data: schemas.CampaignCreate, db: Session = Depends
         delay_between_posts=campaign_data.delay_between_posts,
         rotation_strategy=campaign_data.rotation_strategy,
         publish_method=campaign_data.publish_method,
+        user_id=current_user.id,
     )
 
 
@@ -249,6 +262,7 @@ async def create_campaign_with_media(
     images: Optional[List[UploadFile]] = File(None),
     video: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
 ):
     group_ids = await _form_group_ids(request)
 
@@ -302,35 +316,60 @@ async def create_campaign_with_media(
         rotation_strategy=rotation_strategy,
         image_paths=image_paths,
         publish_method=publish_method,
+        user_id=current_user.id,
     )
 
 
 @router.get("", response_model=List[schemas.CampaignResponse])
-def get_campaigns(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    campaigns = db.query(models.Campaign).order_by(
+def get_campaigns(
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    campaigns = db.query(models.Campaign).filter(
+        models.Campaign.user_id == current_user.id
+    ).order_by(
         models.Campaign.created_at.desc()
     ).offset(skip).limit(limit).all()
     return campaigns
 
 
 @router.get("/{campaign_id}", response_model=schemas.CampaignResponse)
-def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
-    campaign = db.query(models.Campaign).filter(models.Campaign.id == campaign_id).first()
+def get_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    campaign = db.query(models.Campaign).filter(
+        models.Campaign.id == campaign_id,
+        models.Campaign.user_id == current_user.id,
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="الحملة غير موجودة")
     return campaign
 
 
 @router.get("/{campaign_id}/plan")
-def get_campaign_plan(campaign_id: int, db: Session = Depends(get_db)):
-    campaign = db.query(models.Campaign).filter(models.Campaign.id == campaign_id).first()
+def get_campaign_plan(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    campaign = db.query(models.Campaign).filter(
+        models.Campaign.id == campaign_id,
+        models.Campaign.user_id == current_user.id,
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="الحملة غير موجودة")
 
     plan = json.loads(campaign.schedule_plan) if campaign.schedule_plan else []
     post_ids = json.loads(campaign.post_ids) if campaign.post_ids else []
 
-    posts_data = db.query(models.Post).filter(models.Post.id.in_(post_ids)).all()
+    posts_data = db.query(models.Post).filter(
+        models.Post.id.in_(post_ids),
+        models.Post.user_id == current_user.id,
+    ).all()
     posts_content_map = {p.id: p.content[:50] + "..." for p in posts_data}
 
     for item in plan:
@@ -351,9 +390,16 @@ def get_campaign_plan(campaign_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{campaign_id}/live-status")
-def get_campaign_live_status(campaign_id: int, db: Session = Depends(get_db)):
+def get_campaign_live_status(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """الربط الحي: جلب حالة الحملة والتقدم والمنشورات الأخيرة"""
-    campaign = db.query(models.Campaign).filter(models.Campaign.id == campaign_id).first()
+    campaign = db.query(models.Campaign).filter(
+        models.Campaign.id == campaign_id,
+        models.Campaign.user_id == current_user.id,
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="الحملة غير موجودة")
 
@@ -418,17 +464,22 @@ def get_campaign_live_status(campaign_id: int, db: Session = Depends(get_db)):
     # آخر النشاطات من جدول posts
     recent_posts = db.query(models.Post).filter(
         models.Post.cycle_number == campaign.id
+        , models.Post.user_id == current_user.id
     ).order_by(models.Post.id.desc()).limit(5).all()
 
     group_ids_in_posts = [p.group_id for p in recent_posts]
     groups_map = {}
     if group_ids_in_posts:
-        groups_in_db = db.query(models.Group).filter(models.Group.id.in_(group_ids_in_posts)).all()
+        groups_in_db = db.query(models.Group).filter(
+            models.Group.id.in_(group_ids_in_posts),
+            models.Group.user_id == current_user.id,
+        ).all()
         groups_map = {g.id: g.name for g in groups_in_db}
 
     # Alerts من السجلات
     recent_logs = db.query(models.BotLog).filter(
         models.BotLog.details.contains(f"campaign_id={campaign_id}")
+        , models.BotLog.user_id == current_user.id
     ).order_by(models.BotLog.created_at.desc()).limit(5).all()
 
     is_scheduler_running = bool(bot_scheduler and bot_scheduler.is_running)
@@ -510,6 +561,7 @@ def update_campaign_status(
     campaign_id: int,
     data: dict,
     db: Session = Depends(get_db)
+    , current_user: models.User = Depends(require_active_subscription)
 ):
     allowed_statuses = {"active", "paused", "cancelled", "completed"}
     new_status = data.get("status")
@@ -520,7 +572,10 @@ def update_campaign_status(
             detail=f"الحالة غير صالحة. القيم المسموحة: {', '.join(allowed_statuses)}"
         )
 
-    campaign = db.query(models.Campaign).filter(models.Campaign.id == campaign_id).first()
+    campaign = db.query(models.Campaign).filter(
+        models.Campaign.id == campaign_id,
+        models.Campaign.user_id == current_user.id,
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="الحملة غير موجودة")
 
@@ -531,7 +586,8 @@ def update_campaign_status(
     log = models.BotLog(
         level="info",
         message=f"🔄 تم تغيير حالة الحملة [{campaign.name}] إلى: {new_status}",
-        details=f"campaign_id={campaign_id}"
+        details=f"campaign_id={campaign_id} | user_id={current_user.id}",
+        user_id=current_user.id,
     )
     db.add(log)
     db.commit()
@@ -540,8 +596,15 @@ def update_campaign_status(
 
 
 @router.post("/{campaign_id}/stop")
-def stop_campaign(campaign_id: int, db: Session = Depends(get_db)):
-    campaign = db.query(models.Campaign).filter(models.Campaign.id == campaign_id).first()
+def stop_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    campaign = db.query(models.Campaign).filter(
+        models.Campaign.id == campaign_id,
+        models.Campaign.user_id == current_user.id,
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="الحملة غير موجودة")
 
@@ -554,13 +617,18 @@ def stop_campaign(campaign_id: int, db: Session = Depends(get_db)):
     log = models.BotLog(
         level="info",
         message=f"⏹ تم إيقاف الحملة [{campaign.name}] يدوياً",
-        details=f"campaign_id={campaign_id}"
+        details=f"campaign_id={campaign_id} | user_id={current_user.id}",
+        user_id=current_user.id,
     )
     db.add(log)
     db.commit()
 
-    active_campaigns = db.query(models.Campaign).filter(models.Campaign.status == "active").count()
+    active_campaigns = db.query(models.Campaign).filter(
+        models.Campaign.user_id == current_user.id,
+        models.Campaign.status == "active",
+    ).count()
     pending_posts = db.query(models.PublishPost).filter(
+        models.PublishPost.user_id == current_user.id,
         models.PublishPost.status.in_(["pending", "publishing"])
     ).count()
     scheduler_stopped = False
@@ -577,8 +645,15 @@ def stop_campaign(campaign_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_campaign(campaign_id: int, db: Session = Depends(get_db)):
-    campaign = db.query(models.Campaign).filter(models.Campaign.id == campaign_id).first()
+def delete_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    campaign = db.query(models.Campaign).filter(
+        models.Campaign.id == campaign_id,
+        models.Campaign.user_id == current_user.id,
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="الحملة غير موجودة")
 
