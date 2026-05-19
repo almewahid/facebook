@@ -13,6 +13,11 @@ import { isSupabaseAuthEnabled } from './utils/supabaseClient';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+const DEFAULT_PLATFORM_SETTINGS = {
+  monthlyPlanLabel: 'شهري',
+  yearlyPlanLabel: 'سنوي',
+  manualPaymentInfo: '',
+};
 
 function AuthPanel({ mode, setMode, error, onLogin, onRegister, onGoogleLogin, onLoginWithGoogle, onClose }) {
   const [form, setForm] = useState({ full_name: '', email: '', password: '' });
@@ -266,22 +271,14 @@ function AdminControlPanel({ setView }) {
   const [section, setSection] = useState('subscriptions');
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [platformSettings, setPlatformSettings] = useState(() => {
+  const [platformSettings, setPlatformSettings] = useState(DEFAULT_PLATFORM_SETTINGS);
+
+  useEffect(() => {
     try {
       const saved = localStorage.getItem('fb_poster_admin_settings');
-      return saved ? JSON.parse(saved) : {
-        monthlyPlanLabel: 'شهري',
-        yearlyPlanLabel: 'سنوي',
-        manualPaymentInfo: '',
-      };
-    } catch {
-      return {
-        monthlyPlanLabel: 'شهري',
-        yearlyPlanLabel: 'سنوي',
-        manualPaymentInfo: '',
-      };
-    }
-  });
+      if (saved) setPlatformSettings({ ...DEFAULT_PLATFORM_SETTINGS, ...JSON.parse(saved) });
+    } catch { /* keep defaults */ }
+  }, []);
 
   const loadUsers = async () => {
     setLoadingUsers(true);
