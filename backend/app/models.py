@@ -36,11 +36,15 @@ class Subscription(Base):
     id                  = Column(Integer, primary_key=True, index=True)
     user_id             = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     plan                = Column(String, nullable=False, index=True)  # monthly | yearly
+    service_key         = Column(String, default="new_post", index=True)  # new_post | share_page
+    service_name        = Column(String, nullable=True)
     status              = Column(String, default="pending", index=True)  # pending | active | expired | cancelled
     start_date          = Column(DateTime(timezone=True), nullable=True)
     end_date            = Column(DateTime(timezone=True), nullable=True)
     payment_method      = Column(String, nullable=True)  # manual | stripe | paymob | paddle
     payment_reference   = Column(String, nullable=True)
+    amount_cents        = Column(Integer, nullable=True)
+    currency            = Column(String, default="EGP")
     provider            = Column(String, default="manual", index=True)
     provider_customer_id = Column(String, nullable=True)
     provider_subscription_id = Column(String, nullable=True)
@@ -59,6 +63,8 @@ class Payment(Base):
     user_id           = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     subscription_id   = Column(Integer, ForeignKey("subscriptions.id"), nullable=True, index=True)
     plan              = Column(String, nullable=False, index=True)
+    service_key       = Column(String, default="new_post", index=True)
+    service_name      = Column(String, nullable=True)
     status            = Column(String, default="pending", index=True)  # pending | approved | rejected | failed
     payment_method    = Column(String, default="manual", index=True)
     payment_reference = Column(String, nullable=True)

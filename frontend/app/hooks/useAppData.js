@@ -14,6 +14,7 @@ export function useAppData() {
   });
   const [user, setUser] = useState(null);
   const [subscription, setSubscription] = useState(null);
+  const [billingPlans, setBillingPlans] = useState(null);
   const [authMode, setAuthMode] = useState('login');
   const [authError, setAuthError] = useState('');
   const [stats, setStats] = useState(null);
@@ -146,11 +147,11 @@ export function useAppData() {
     setSubscription(null);
   };
 
-  const submitManualPayment = async ({ plan, payment_reference, proof_url }) => {
+  const submitManualPayment = async ({ plan, service_key, payment_reference, proof_url }) => {
     const response = await fetch(`${API_URL}/billing/payments/manual`, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ plan, payment_reference, proof_url, payment_method: 'manual' }),
+      body: JSON.stringify({ plan, service_key, payment_reference, proof_url, payment_method: 'manual' }),
     });
     if (!response.ok) throw new Error('تعذر إرسال طلب الدفع');
     await refreshSubscription();
@@ -191,6 +192,7 @@ export function useAppData() {
       setGroups(Array.isArray(groupsData) ? groupsData : []);
       setPosts(Array.isArray(postsData) ? postsData : []);
       setBotStatus(statusData || { is_running: false });
+      setBillingPlans(await fetchJson('/billing/plans', null));
     } catch (error) {
       console.error('خطأ:', error);
     } finally {
@@ -416,6 +418,7 @@ export function useAppData() {
     token,
     user,
     subscription,
+    billingPlans,
     authMode,
     setAuthMode,
     authError,

@@ -14,9 +14,7 @@ Base.metadata.create_all(bind=engine)
 
 
 def ensure_runtime_columns():
-    """إضافة أعمدة صغيرة مطلوبة عند تشغيل SQLite قديم بدون Alembic."""
-    if engine.dialect.name != "sqlite":
-        return
+    """إضافة أعمدة صغيرة مطلوبة عند تشغيل قاعدة قديمة بدون Alembic."""
 
     required_columns = {
         "groups": {
@@ -37,6 +35,16 @@ def ensure_runtime_columns():
             "delay_minutes": "INTEGER DEFAULT 5",
             "delay_max_minutes": "INTEGER DEFAULT 5",
         },
+        "subscriptions": {
+            "service_key": "VARCHAR DEFAULT 'new_post'",
+            "service_name": "VARCHAR",
+            "amount_cents": "INTEGER",
+            "currency": "VARCHAR DEFAULT 'EGP'",
+        },
+        "payments": {
+            "service_key": "VARCHAR DEFAULT 'new_post'",
+            "service_name": "VARCHAR",
+        },
         "schedules": {
             "user_id": "INTEGER",
         },
@@ -52,14 +60,19 @@ def ensure_runtime_columns():
     }
 
     with engine.begin() as conn:
-        for table_name, columns in required_columns.items():
-            existing = {
-                row[1]
-                for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
-            }
-            for column_name, ddl in columns.items():
-                if column_name not in existing:
-                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
+        if engine.dialect.name == "sqlite":
+            for table_name, columns in required_columns.items():
+                existing = {
+                    row[1]
+                    for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+                }
+                for column_name, ddl in columns.items():
+                    if column_name not in existing:
+                        conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
+        else:
+            for table_name, columns in required_columns.items():
+                for column_name, ddl in columns.items():
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_name} {ddl}"))
 
 
 ensure_runtime_columns()

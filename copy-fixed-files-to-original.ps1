@@ -39,6 +39,7 @@ $files = @(
     "backend\app\bot\scheduler.py",
     "backend\app\bot\selenium_bot.py",
     "backend\alembic\versions\8b1c2d3e4f5a_saas_auth_subscriptions_user_isolation.py",
+    "backend\alembic\versions\9c2d3e4f5a6b_service_pricing_subscriptions.py",
     "docs\RAILWAY_DEPLOYMENT.ar.md",
     "docs\RENDER_DEPLOYMENT.ar.md",
     "docs\NEON_POSTGRES.ar.md",

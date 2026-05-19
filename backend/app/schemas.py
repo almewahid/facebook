@@ -36,11 +36,15 @@ class SubscriptionResponse(BaseModel):
     id: int
     user_id: int
     plan: str
+    service_key: Optional[str] = None
+    service_name: Optional[str] = None
     status: str
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     payment_method: Optional[str] = None
     payment_reference: Optional[str] = None
+    amount_cents: Optional[int] = None
+    currency: Optional[str] = "EGP"
     provider: Optional[str] = None
     created_at: datetime
 
@@ -49,6 +53,7 @@ class SubscriptionResponse(BaseModel):
 
 class ManualPaymentCreate(BaseModel):
     plan: str = Field(..., pattern="^(monthly|yearly)$")
+    service_key: str = Field(..., pattern="^(new_post|share_page)$")
     payment_method: str = "manual"
     payment_reference: Optional[str] = None
     proof_url: Optional[str] = None
@@ -58,10 +63,14 @@ class PaymentResponse(BaseModel):
     user_id: int
     subscription_id: Optional[int] = None
     plan: str
+    service_key: Optional[str] = None
+    service_name: Optional[str] = None
     status: str
     payment_method: str
     payment_reference: Optional[str] = None
     proof_url: Optional[str] = None
+    amount_cents: Optional[int] = None
+    currency: Optional[str] = "EGP"
     provider: str
     created_at: datetime
 
@@ -72,6 +81,15 @@ class AdminActivateSubscription(BaseModel):
     plan: str = Field(..., pattern="^(monthly|yearly)$")
     payment_id: Optional[int] = None
     payment_reference: Optional[str] = None
+
+class AdminServicePrice(BaseModel):
+    monthly: int = Field(0, ge=0)
+    yearly: int = Field(0, ge=0)
+
+class AdminPlatformSettings(BaseModel):
+    manual_payment_info: Optional[str] = ""
+    currency: str = "EGP"
+    service_prices: dict[str, AdminServicePrice]
 
 # ==================== Group Schemas ====================
 

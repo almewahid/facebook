@@ -14,9 +14,16 @@ import { isSupabaseAuthEnabled } from './utils/supabaseClient';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 const DEFAULT_PLATFORM_SETTINGS = {
-  monthlyPlanLabel: 'شهري',
-  yearlyPlanLabel: 'سنوي',
-  manualPaymentInfo: '',
+  manual_payment_info: '',
+  currency: 'EGP',
+  service_prices: {
+    new_post: { monthly: 0, yearly: 0 },
+    share_page: { monthly: 0, yearly: 0 },
+  },
+  services: {
+    new_post: { name: 'النشر بمنشور جديد' },
+    share_page: { name: 'مشاركة منشور من الصفحة' },
+  },
 };
 
 function AuthPanel({ mode, setMode, error, onLogin, onRegister, onGoogleLogin, onLoginWithGoogle, onClose }) {
@@ -146,17 +153,30 @@ function AuthPanel({ mode, setMode, error, onLogin, onRegister, onGoogleLogin, o
   );
 }
 
-function SubscriptionPanel({ subscription, onSubmitPayment, onLogout, onClose }) {
+function formatMoney(cents = 0, currency = 'EGP') {
+  const value = Number(cents || 0) / 100;
+  return `${value.toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ${currency}`;
+}
+
+function SubscriptionPanel({ subscription, billingPlans, onSubmitPayment, onLogout, onClose }) {
   const [plan, setPlan] = useState('monthly');
+  const [serviceKey, setServiceKey] = useState('new_post');
   const [paymentReference, setPaymentReference] = useState('');
   const [proofUrl, setProofUrl] = useState('');
   const [message, setMessage] = useState('');
+  const services = billingPlans?.services || {
+    new_post: { name: 'النشر بمنشور جديد', prices: { monthly: 0, yearly: 0 } },
+    share_page: { name: 'مشاركة منشور من الصفحة', prices: { monthly: 0, yearly: 0 } },
+  };
+  const selectedService = services[serviceKey] || services.new_post;
+  const selectedPrice = selectedService?.prices?.[plan] || 0;
+  const currency = billingPlans?.currency || 'EGP';
 
   const submit = async (e) => {
     e.preventDefault();
     setMessage('');
     try {
-      await onSubmitPayment({ plan, payment_reference: paymentReference, proof_url: proofUrl });
+      await onSubmitPayment({ plan, service_key: serviceKey, payment_reference: paymentReference, proof_url: proofUrl });
       setMessage('تم إرسال طلب الدفع. سيتم تفعيل الاشتراك من لوحة المدير بعد المراجعة.');
     } catch {
       setMessage('تعذر إرسال طلب الدفع حالياً.');
@@ -169,11 +189,24 @@ function SubscriptionPanel({ subscription, onSubmitPayment, onLogout, onClose })
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">تفعيل الاشتراك</h1>
-            <p className="text-sm text-gray-500 mt-1">اختر الخطة ثم أرسل رقم عملية التحويل ليتم التفعيل يدويًا.</p>
+            <p className="text-sm text-gray-500 mt-1">اختر الخدمة والخطة ثم أرسل رقم عملية التحويل.</p>
           </div>
           <button type="button" onClick={onClose || onLogout} className="text-sm text-gray-500">
             {onClose ? 'إغلاق' : 'خروج'}
           </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {Object.entries(services).map(([key, service]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setServiceKey(key)}
+              className={`border rounded-md p-4 text-right ${serviceKey === key ? 'border-blue-600 bg-blue-50' : 'border-gray-200'}`}
+            >
+              <p className="font-semibold">{service.name}</p>
+              <p className="text-xs text-gray-500 mt-1">{formatMoney(service.prices?.[plan] || 0, currency)}</p>
+            </button>
+          ))}
         </div>
         <div className="grid grid-cols-2 gap-3">
           {['monthly', 'yearly'].map((item) => (
@@ -190,7 +223,8 @@ function SubscriptionPanel({ subscription, onSubmitPayment, onLogout, onClose })
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-md p-4 text-sm text-gray-700">
           <p className="font-semibold text-gray-900">بيانات الدفع اليدوي</p>
-          <p className="mt-1">رقم العملية هو رقم الإيصال أو المرجع الذي يظهر لك بعد التحويل البنكي أو فودافون كاش أو أي وسيلة دفع يدوية تحددها الإدارة.</p>
+          <p className="mt-1">{billingPlans?.manual_payment?.instructions || 'رقم العملية هو رقم الإيصال أو المرجع الذي يظهر لك بعد التحويل.'}</p>
+          <p className="mt-2 font-bold text-gray-900">المطلوب: {formatMoney(selectedPrice, currency)}</p>
         </div>
         <input
           className="w-full border border-gray-200 rounded-md px-3 py-2"
@@ -253,7 +287,10 @@ function AdminPanel() {
           {payments.map(payment => (
             <div key={payment.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-md p-3">
               <div className="text-sm">
-                <p className="font-semibold text-gray-900">مستخدم #{payment.user_id} - {payment.plan === 'yearly' ? 'سنوي' : 'شهري'}</p>
+                <p className="font-semibold text-gray-900">
+                  مستخدم #{payment.user_id} - {payment.service_name || 'خدمة غير محددة'} - {payment.plan === 'yearly' ? 'سنوي' : 'شهري'}
+                </p>
+                <p className="text-gray-500">القيمة: {formatMoney(payment.amount_cents || 0, payment.currency || 'EGP')}</p>
                 <p className="text-gray-500">رقم العملية: {payment.payment_reference || 'غير مضاف'}</p>
               </div>
               <button onClick={() => activate(payment)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md px-4 py-2 text-sm">
@@ -273,11 +310,28 @@ function AdminControlPanel({ setView }) {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [platformSettings, setPlatformSettings] = useState(DEFAULT_PLATFORM_SETTINGS);
 
-  useEffect(() => {
+  const loadPlatformSettings = async () => {
     try {
-      const saved = localStorage.getItem('fb_poster_admin_settings');
-      if (saved) setPlatformSettings({ ...DEFAULT_PLATFORM_SETTINGS, ...JSON.parse(saved) });
+      const res = await authFetch(`${API_URL}/admin/platform-settings`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPlatformSettings({
+        ...DEFAULT_PLATFORM_SETTINGS,
+        ...data,
+        service_prices: {
+          ...DEFAULT_PLATFORM_SETTINGS.service_prices,
+          ...(data.service_prices || {}),
+        },
+        services: {
+          ...DEFAULT_PLATFORM_SETTINGS.services,
+          ...(data.services || {}),
+        },
+      });
     } catch { /* keep defaults */ }
+  };
+
+  useEffect(() => {
+    loadPlatformSettings();
   }, []);
 
   const loadUsers = async () => {
@@ -293,8 +347,15 @@ function AdminControlPanel({ setView }) {
   useEffect(() => { loadUsers(); }, []);
 
   const savePlatformSettings = () => {
-    localStorage.setItem('fb_poster_admin_settings', JSON.stringify(platformSettings));
-    alert('تم حفظ إعدادات المنصة');
+    authFetch(`${API_URL}/admin/platform-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(platformSettings),
+    }).then((res) => {
+      if (!res.ok) throw new Error();
+      alert('تم حفظ إعدادات المنصة');
+      loadPlatformSettings();
+    }).catch(() => alert('تعذر حفظ إعدادات المنصة'));
   };
 
   const cards = [
@@ -416,21 +477,44 @@ function AdminControlPanel({ setView }) {
           <div className="mb-5">
             <h2 className="text-sm font-bold text-gray-900">إعدادات المنصة</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="space-y-4">
+            {Object.entries(platformSettings.services || {}).map(([key, service]) => (
+              <div key={key} className="rounded-md border border-gray-100 p-4">
+                <h3 className="mb-3 text-xs font-bold text-gray-900">{service.name}</h3>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {['monthly', 'yearly'].map((planKey) => (
+                    <label key={planKey} className="text-xs font-bold text-gray-600">
+                      {planKey === 'monthly' ? 'قيمة الاشتراك الشهري' : 'قيمة الاشتراك السنوي'}
+                      <input
+                        type="number"
+                        min="0"
+                        className="mt-2 w-full rounded-md border border-gray-200 px-3 py-2 font-normal text-gray-800"
+                        value={Number(platformSettings.service_prices?.[key]?.[planKey] || 0) / 100}
+                        onChange={(e) => {
+                          const amount = Math.max(0, Math.round(Number(e.target.value || 0) * 100));
+                          setPlatformSettings({
+                            ...platformSettings,
+                            service_prices: {
+                              ...platformSettings.service_prices,
+                              [key]: {
+                                ...(platformSettings.service_prices?.[key] || {}),
+                                [planKey]: amount,
+                              },
+                            },
+                          });
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
             <label className="text-xs font-bold text-gray-600">
-              اسم الخطة الشهرية
+              العملة
               <input
                 className="mt-2 w-full rounded-md border border-gray-200 px-3 py-2 font-normal text-gray-800"
-                value={platformSettings.monthlyPlanLabel}
-                onChange={(e) => setPlatformSettings({ ...platformSettings, monthlyPlanLabel: e.target.value })}
-              />
-            </label>
-            <label className="text-xs font-bold text-gray-600">
-              اسم الخطة السنوية
-              <input
-                className="mt-2 w-full rounded-md border border-gray-200 px-3 py-2 font-normal text-gray-800"
-                value={platformSettings.yearlyPlanLabel}
-                onChange={(e) => setPlatformSettings({ ...platformSettings, yearlyPlanLabel: e.target.value })}
+                value={platformSettings.currency}
+                onChange={(e) => setPlatformSettings({ ...platformSettings, currency: e.target.value || 'EGP' })}
               />
             </label>
             <label className="text-xs font-bold text-gray-600 md:col-span-2">
@@ -438,8 +522,8 @@ function AdminControlPanel({ setView }) {
               <textarea
                 rows={4}
                 className="mt-2 w-full rounded-md border border-gray-200 px-3 py-2 font-normal text-gray-800"
-                value={platformSettings.manualPaymentInfo}
-                onChange={(e) => setPlatformSettings({ ...platformSettings, manualPaymentInfo: e.target.value })}
+                value={platformSettings.manual_payment_info}
+                onChange={(e) => setPlatformSettings({ ...platformSettings, manual_payment_info: e.target.value })}
                 placeholder="اكتب بيانات التحويل التي تظهر للمستخدم في شاشة تفعيل الاشتراك"
               />
             </label>
@@ -713,6 +797,7 @@ export default function Page() {
         <div className="fixed inset-0 z-[70] bg-black/40">
           <SubscriptionPanel
             subscription={appData.subscription}
+            billingPlans={appData.billingPlans}
             onSubmitPayment={appData.submitManualPayment}
             onLogout={appData.logout}
             onClose={() => setShowSubscriptionGate(false)}
