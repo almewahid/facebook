@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { RefreshCw, PlusCircle, ChevronDown, CreditCard, ShieldCheck, UsersRound, Settings2 } from 'lucide-react';
+import { RefreshCw, PlusCircle, ChevronDown, CreditCard } from 'lucide-react';
 import Header from './Components/Header';
 import Sidebar from './Components/Sidebar';
 import Dashboard from './Components/Dashboard';
@@ -262,7 +262,7 @@ function AdminPanel() {
   );
 }
 
-function AdminControlPanel({ setView, user }) {
+function AdminControlPanel({ setView }) {
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
@@ -278,15 +278,6 @@ function AdminControlPanel({ setView, user }) {
 
   useEffect(() => { loadUsers(); }, []);
 
-  const updateRole = async (targetUser, role) => {
-    const res = await authFetch(`${API_URL}/admin/users/${targetUser.id}/role`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role }),
-    });
-    if (res.ok) loadUsers();
-  };
-
   const cards = [
     {
       icon: CreditCard,
@@ -294,42 +285,11 @@ function AdminControlPanel({ setView, user }) {
       desc: 'مراجعة المدفوعات اليدوية وتفعيل الاشتراكات.',
       action: 'فتح الطلبات',
       onClick: () => setView('admin'),
-    },
-    {
-      icon: UsersRound,
-      title: 'المستخدمون',
-      desc: 'تجهيز صفحة إدارة المستخدمين والخطط في المرحلة التالية.',
-      action: 'قريبًا',
-      onClick: null,
-    },
-    {
-      icon: Settings2,
-      title: 'إعدادات المنصة',
-      desc: 'مكان لاحق لإعداد بيانات الدفع والخطط والصلاحيات.',
-      action: 'قريبًا',
-      onClick: null,
-    },
+    }
   ];
 
   return (
     <section className="p-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">صفحة التحكم</h1>
-        <p className="text-xs text-gray-400 mt-1">إدارة الاشتراكات والمستخدمين وإعدادات المنصة من مكان واحد.</p>
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-slate-100 p-3 text-slate-700">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-gray-900">مرحبًا {user?.full_name || user?.email || 'بالمدير'}</p>
-            <p className="text-xs text-gray-400 mt-1">هذه الصفحة تظهر لحسابات الإدارة فقط.</p>
-          </div>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {cards.map(({ icon: Icon, title, desc, action, onClick }) => (
           <div key={title} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
@@ -357,8 +317,7 @@ function AdminControlPanel({ setView, user }) {
       <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold text-gray-900">المستخدمون وصلاحيات الإدارة</h2>
-            <p className="mt-1 text-xs text-gray-400">يمكن للمدير ترقية أي حساب إلى Admin من هنا.</p>
+            <h2 className="text-sm font-bold text-gray-900">المستخدمون</h2>
           </div>
           <button onClick={loadUsers} className="rounded-md border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50">
             {loadingUsers ? 'تحديث...' : 'تحديث'}
@@ -371,13 +330,12 @@ function AdminControlPanel({ setView, user }) {
                 <th className="px-4 py-3 font-medium">المستخدم</th>
                 <th className="px-4 py-3 font-medium">الدور</th>
                 <th className="px-4 py-3 font-medium">الحالة</th>
-                <th className="px-4 py-3 font-medium text-center">إجراء</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {users.length === 0 && (
                 <tr>
-                  <td colSpan="4" className="px-4 py-8 text-center text-gray-400">لا توجد بيانات مستخدمين.</td>
+                  <td colSpan="3" className="px-4 py-8 text-center text-gray-400">لا توجد بيانات مستخدمين.</td>
                 </tr>
               )}
               {users.map((item) => (
@@ -392,24 +350,6 @@ function AdminControlPanel({ setView, user }) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-500">{item.is_active ? 'نشط' : 'موقوف'}</td>
-                  <td className="px-4 py-3 text-center">
-                    {item.role === 'admin' ? (
-                      <button
-                        disabled={item.id === user?.id}
-                        onClick={() => updateRole(item, 'user')}
-                        className="rounded-md border border-gray-200 px-3 py-2 font-bold text-gray-500 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        جعله مستخدم
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => updateRole(item, 'admin')}
-                        className="rounded-md bg-slate-900 px-3 py-2 font-bold text-white hover:bg-slate-800"
-                      >
-                        جعله أدمن
-                      </button>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -616,7 +556,7 @@ export default function Page() {
         {/* Dashboard */}
         <main className="flex-1">
           {view === 'admin-control' && appData.user?.role === 'admin' ? (
-            <AdminControlPanel setView={setView} user={appData.user} />
+            <AdminControlPanel setView={setView} />
           ) : view === 'admin' && appData.user?.role === 'admin' ? <AdminPanel /> : <Dashboard
             stats={appData.stats}
             groups={appData.groups}

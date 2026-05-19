@@ -73,9 +73,6 @@ class AdminActivateSubscription(BaseModel):
     payment_id: Optional[int] = None
     payment_reference: Optional[str] = None
 
-class AdminUpdateUserRole(BaseModel):
-    role: str = Field(..., pattern="^(user|admin)$")
-
 # ==================== Group Schemas ====================
 
 class GroupBase(BaseModel):
