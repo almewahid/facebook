@@ -330,7 +330,7 @@ function AdminControlPanel({ setView }) {
   return (
     <section className="p-6 space-y-5">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {cards.map(({ icon: Icon, title, desc, action, onClick }) => (
+        {cards.map(({ icon: Icon, title, desc, action, view: cardView, onClick }) => (
           <div key={title} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
               <Icon className="h-5 w-5" />
@@ -341,7 +341,7 @@ function AdminControlPanel({ setView }) {
               type="button"
               onClick={onClick || undefined}
               className={`mt-4 w-full rounded-md px-4 py-2 text-xs font-bold ${
-                section === view
+                section === cardView
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
