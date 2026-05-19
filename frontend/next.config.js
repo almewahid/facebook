@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  distDir: '.next-app',
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8001'
     return [
