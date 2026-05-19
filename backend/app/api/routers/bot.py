@@ -6,6 +6,7 @@ import re
 import shutil
 
 from app.database import get_db
+from app.deps import require_active_subscription
 from app import models, schemas
 from app.bot.scheduler import bot_scheduler
 
@@ -13,14 +14,18 @@ router = APIRouter(prefix="/bot", tags=["bot"])
 
 
 @router.post("/start", response_model=schemas.BotStartResponse)
-def start_bot(request: schemas.BotStartRequest, db: Session = Depends(get_db)):
+def start_bot(
+    request: schemas.BotStartRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     if bot_scheduler and bot_scheduler.is_running and not request.force:
         raise HTTPException(status_code=400, detail="البوت يعمل بالفعل")
 
     if bot_scheduler:
         bot_scheduler.start()
 
-    log = models.BotLog(level="info", message="تم بدء البوت", details=f"Force: {request.force}")
+    log = models.BotLog(level="info", message="تم بدء البوت", details=f"Force: {request.force}", user_id=current_user.id)
     db.add(log)
     db.commit()
 
@@ -32,25 +37,32 @@ def start_bot(request: schemas.BotStartRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/stop", response_model=schemas.BotStopResponse)
-def stop_bot(request: schemas.BotStopRequest = schemas.BotStopRequest(), db: Session = Depends(get_db)):
+def stop_bot(
+    request: schemas.BotStopRequest = schemas.BotStopRequest(),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     if bot_scheduler:
         bot_scheduler.stop()
 
     stopped_posts = db.query(models.PublishPost).filter(
+        models.PublishPost.user_id == current_user.id,
         models.PublishPost.status.in_(["pending", "publishing"])
     ).update({models.PublishPost.status: "cancelled"}, synchronize_session=False)
 
     stopped_campaigns = db.query(models.Campaign).filter(
+        models.Campaign.user_id == current_user.id,
         models.Campaign.status == "active"
     ).update({models.Campaign.status: "cancelled"}, synchronize_session=False)
 
-    log = models.BotLog(level="info", message="تم إيقاف البوت", details=f"Force: {request.force}")
+    log = models.BotLog(level="info", message="تم إيقاف البوت", details=f"Force: {request.force}", user_id=current_user.id)
     db.add(log)
     if stopped_posts or stopped_campaigns:
         db.add(models.BotLog(
             level="info",
             message="تم إيقاف كل عمليات النشر النشطة",
-            details=f"publish_posts={stopped_posts} | campaigns={stopped_campaigns}"
+            details=f"publish_posts={stopped_posts} | campaigns={stopped_campaigns}",
+            user_id=current_user.id,
         ))
     db.commit()
 
@@ -62,15 +74,20 @@ def stop_bot(request: schemas.BotStopRequest = schemas.BotStopRequest(), db: Ses
 
 
 @router.get("/status", response_model=schemas.BotStatusResponse)
-def get_bot_status(db: Session = Depends(get_db)):
+def get_bot_status(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     stale_cutoff = datetime.utcnow() - timedelta(minutes=30)
 
     db.query(models.PublishPost).filter(
+        models.PublishPost.user_id == current_user.id,
         models.PublishPost.status.in_(["pending", "publishing"]),
         ((models.PublishPost.success_count + models.PublishPost.failed_count) >= models.PublishPost.total_groups)
     ).update({models.PublishPost.status: "done"}, synchronize_session=False)
 
     db.query(models.PublishPost).filter(
+        models.PublishPost.user_id == current_user.id,
         models.PublishPost.status.in_(["pending", "publishing"]),
         models.PublishPost.created_at < stale_cutoff,
         models.PublishPost.success_count == 0,
@@ -80,13 +97,17 @@ def get_bot_status(db: Session = Depends(get_db)):
     db.commit()
 
     active_publishes = db.query(models.PublishPost).filter(
+        models.PublishPost.user_id == current_user.id,
         models.PublishPost.status.in_(["pending", "publishing"])
     ).count()
     active_campaigns = db.query(models.Campaign).filter(
+        models.Campaign.user_id == current_user.id,
         models.Campaign.status == "active"
     ).count()
     is_running = bool((bot_scheduler.is_running if bot_scheduler else False) or active_publishes or active_campaigns)
-    last_post = db.query(models.Post).order_by(models.Post.created_at.desc()).first()
+    last_post = db.query(models.Post).filter(
+        models.Post.user_id == current_user.id
+    ).order_by(models.Post.created_at.desc()).first()
 
     return schemas.BotStatusResponse(
         is_running=is_running,
@@ -100,10 +121,13 @@ def get_bot_status(db: Session = Depends(get_db)):
 
 
 @router.get("/safety-status")
-def get_safety_status(db: Session = Depends(get_db)):
-    paused = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_PAUSED").first()
-    reason = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_PAUSE_REASON").first()
-    daily_limit = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_DAILY_POST_LIMIT").first()
+def get_safety_status(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
+    paused = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_PAUSED", models.BotConfig.user_id == current_user.id).first()
+    reason = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_PAUSE_REASON", models.BotConfig.user_id == current_user.id).first()
+    daily_limit = db.query(models.BotConfig).filter(models.BotConfig.key == "SAFETY_DAILY_POST_LIMIT", models.BotConfig.user_id == current_user.id).first()
 
     return {
         "paused": bool(paused and str(paused.value).lower() == "true"),
@@ -113,21 +137,28 @@ def get_safety_status(db: Session = Depends(get_db)):
 
 
 @router.post("/safety-reset")
-def reset_safety_pause(db: Session = Depends(get_db)):
+def reset_safety_pause(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     for key, value in {
         "SAFETY_PAUSED": "false",
         "SAFETY_PAUSE_REASON": "",
     }.items():
-        db_config = db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+        db_config = db.query(models.BotConfig).filter(
+            models.BotConfig.key == key,
+            models.BotConfig.user_id == current_user.id,
+        ).first()
         if db_config:
             db_config.value = value
         else:
-            db.add(models.BotConfig(key=key, value=value))
+            db.add(models.BotConfig(key=key, value=value, user_id=current_user.id))
 
     db.add(models.BotLog(
         level="info",
         message="تم إلغاء الإيقاف الآمن يدوياً",
-        details="راجع الحساب على فيسبوك قبل إعادة التشغيل"
+        details="راجع الحساب على فيسبوك قبل إعادة التشغيل",
+        user_id=current_user.id,
     ))
     db.commit()
 
@@ -138,7 +169,10 @@ def reset_safety_pause(db: Session = Depends(get_db)):
 
 
 @router.post("/logout")
-def logout_facebook(db: Session = Depends(get_db)):
+def logout_facebook(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     if bot_scheduler and bot_scheduler.is_running:
         raise HTTPException(status_code=400, detail="يجب إيقاف البوت أولاً قبل تسجيل الخروج")
 
@@ -147,7 +181,7 @@ def logout_facebook(db: Session = Depends(get_db)):
     try:
         if os.path.exists(profile_path):
             shutil.rmtree(profile_path)
-            log = models.BotLog(level="info", message="تم تسجيل الخروج من فيسبوك", details="تم حذف Chrome Profile من C:")
+            log = models.BotLog(level="info", message="تم تسجيل الخروج من فيسبوك", details="تم حذف Chrome Profile من C:", user_id=current_user.id)
             db.add(log)
             db.commit()
             return {"status": "success", "message": "تم تسجيل الخروج بنجاح ومسح بيانات الجلسة من القرص C."}
@@ -158,7 +192,7 @@ def logout_facebook(db: Session = Depends(get_db)):
 
 
 @router.get("/profile-status")
-def get_profile_status():
+def get_profile_status(current_user: models.User = Depends(require_active_subscription)):
     """التحقق من وجود Chrome Profile"""
     profile_path = r"C:\bot_chrome_data"
 
@@ -175,8 +209,17 @@ def get_profile_status():
 
 
 @router.post("/open-login-browser")
-def open_login_browser(db: Session = Depends(get_db)):
+def open_login_browser(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """يفتح Chrome لتسجيل الدخول يدوياً بدون تشغيل البوت"""
+    if os.name != "nt" and os.getenv("DISPLAY") is None:
+        raise HTTPException(
+            status_code=400,
+            detail="فتح Chrome اليدوي متاح عند تشغيل الباكند محلياً فقط، وليس من سيرفر Render.",
+        )
+
     if bot_scheduler and bot_scheduler.is_running:
         raise HTTPException(status_code=400, detail="أوقف البوت أولاً قبل فتح المتصفح")
 
@@ -193,7 +236,8 @@ def open_login_browser(db: Session = Depends(get_db)):
         log = models.BotLog(
             level="info",
             message="فتح المتصفح لتسجيل الدخول",
-            details=result.get("message")
+            details=result.get("message"),
+            user_id=current_user.id,
         )
         db.add(log)
         db.commit()
@@ -207,7 +251,10 @@ def open_login_browser(db: Session = Depends(get_db)):
 
 
 @router.post("/close-login-browser")
-def close_login_browser(db: Session = Depends(get_db)):
+def close_login_browser(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """يغلق المتصفح ويحفظ الجلسة"""
     try:
         bot = (bot_scheduler.bot if bot_scheduler and bot_scheduler.bot else None)
@@ -226,7 +273,8 @@ def close_login_browser(db: Session = Depends(get_db)):
         log = models.BotLog(
             level="info",
             message="إغلاق متصفح تسجيل الدخول وحفظ الجلسة",
-            details=result.get("message")
+            details=result.get("message"),
+            user_id=current_user.id,
         )
         db.add(log)
         db.commit()
@@ -237,7 +285,7 @@ def close_login_browser(db: Session = Depends(get_db)):
 
 
 @router.get("/chrome-profiles")
-def get_chrome_profiles():
+def get_chrome_profiles(current_user: models.User = Depends(require_active_subscription)):
     """جلب كل بروفايلات Chrome الموجودة على الجهاز"""
     import json
 
@@ -275,7 +323,11 @@ def get_chrome_profiles():
 
 
 @router.post("/set-chrome-profile")
-def set_chrome_profile(data: dict, db: Session = Depends(get_db)):
+def set_chrome_profile(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_active_subscription),
+):
     """تعيين بروفايل Chrome المستخدم في البوت"""
     import json
 
@@ -326,9 +378,12 @@ def set_chrome_profile(data: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"خطأ في الحفظ: {str(e)}")
 
     for key, value in [("CHROME_PROFILE", profile_folder)]:
-        db_config = db.query(models.BotConfig).filter(models.BotConfig.key == key).first()
+        db_config = db.query(models.BotConfig).filter(
+            models.BotConfig.key == key,
+            models.BotConfig.user_id == current_user.id,
+        ).first()
         if not db_config:
-            db_config = models.BotConfig(key=key, value=value)
+            db_config = models.BotConfig(key=key, value=value, user_id=current_user.id)
             db.add(db_config)
         else:
             db_config.value = value

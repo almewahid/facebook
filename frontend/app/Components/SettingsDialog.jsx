@@ -1,9 +1,11 @@
 'use client';
 
+import { authFetch } from '../utils/authFetch';
 import { useState, useEffect } from 'react';
 import { X, Save, LogOut, LogIn, Globe, User, CheckCircle, AlertCircle, Monitor, RefreshCw } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+const IS_REMOTE_API = /^https?:\/\//i.test(API_URL) && !/localhost|127\.0\.0\.1/i.test(API_URL);
 
 /**
  * مكون زر فتح المتصفح
@@ -13,10 +15,14 @@ function LoginBrowserButton({ onSuccess }) {
   const [status, setStatus] = useState('idle'); // idle | opening | open | closing
 
   const handleOpen = async () => {
+    if (IS_REMOTE_API) {
+      alert('فتح Chrome اليدوي متاح فقط عند تشغيل الباكند محلياً على جهازك. النسخة الحالية متصلة بسيرفر Render، ولا يمكنه فتح نافذة على جهازك.');
+      return;
+    }
     if (status !== 'idle') return;
     setStatus('opening');
     try {
-      const res = await fetch(`${API_URL}/bot/open-login-browser`, { 
+      const res = await authFetch(`${API_URL}/bot/open-login-browser`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -37,7 +43,7 @@ function LoginBrowserButton({ onSuccess }) {
   const handleClose = async () => {
     setStatus('closing');
     try {
-      const res = await fetch(`${API_URL}/bot/close-login-browser`, { method: 'POST' });
+      const res = await authFetch(`${API_URL}/bot/close-login-browser`, { method: 'POST' });
       setStatus('idle');
       if (res.ok) {
         onSuccess?.();
@@ -50,10 +56,15 @@ function LoginBrowserButton({ onSuccess }) {
 
   return (
     <div className="flex flex-col gap-2">
+      {IS_REMOTE_API && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold leading-6 text-amber-800">
+          فتح Chrome وتسجيل دخول فيسبوك اليدوي يعمل من التشغيل المحلي فقط. النسخة المنشورة تحفظ الإعدادات وتشغل الخدمات، لكنها لا تستطيع فتح نافذة Chrome على جهازك.
+        </div>
+      )}
       <div className="flex gap-2">
         <button
           onClick={handleOpen}
-          disabled={status !== 'idle'}
+          disabled={IS_REMOTE_API || status !== 'idle'}
           className={`flex-1 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-60 ${
             status === 'open'
               ? 'bg-green-50 text-green-700 border border-green-300'
@@ -61,7 +72,8 @@ function LoginBrowserButton({ onSuccess }) {
           }`}
         >
           {status === 'opening' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-          {status === 'opening' ? 'جاري تشغيل Chrome...' :
+          {IS_REMOTE_API ? 'فتح Chrome متاح محلياً فقط' :
+           status === 'opening' ? 'جاري تشغيل Chrome...' :
            status === 'open'    ? '✅ المتصفح نشط الآن' :
                                  '🌐 فتح المتصفح لتسجيل الدخول'}
         </button>
@@ -122,12 +134,12 @@ export default function SettingsDialog({ show, onClose }) {
 
   const loadSettings = async () => {
     try {
-      const res = await fetch(`${API_URL}/config`);
+      const res = await authFetch(`${API_URL}/config`);
       const configs = await res.json();
       const pageConfig = configs.find(c => c.key === 'PAGE_URL');
       if (pageConfig) setPageUrl(pageConfig.value);
 
-      const profileRes = await fetch(`${API_URL}/bot/profile-status`);
+      const profileRes = await authFetch(`${API_URL}/bot/profile-status`);
       const profileData = await profileRes.json();
       setProfileExists(profileData.exists);
 
@@ -150,7 +162,7 @@ export default function SettingsDialog({ show, onClose }) {
   const loadChromeProfiles = async () => {
     setLoadingProfiles(true);
     try {
-      const res = await fetch(`${API_URL}/bot/chrome-profiles`);
+      const res = await authFetch(`${API_URL}/bot/chrome-profiles`);
       const data = await res.json();
       setChromeProfiles(data.profiles || []);
     } catch (err) {
@@ -166,13 +178,21 @@ export default function SettingsDialog({ show, onClose }) {
     }
     setSaving(true);
     try {
-      const res = await fetch(`${API_URL}/config/PAGE_URL`, {
+      const res = await authFetch(`${API_URL}/config/PAGE_URL`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: pageUrl })
       });
-      if (res.ok) setMessage({ type: 'success', text: '✅ تم حفظ رابط الصفحة بنجاح' });
-      else setMessage({ type: 'error', text: '❌ فشل حفظ الرابط في السيرفر' });
+      if (res.ok) {
+        setMessage({ type: 'success', text: '✅ تم حفظ رابط الصفحة بنجاح' });
+      } else {
+        let detail = 'فشل حفظ الرابط في السيرفر';
+        try {
+          const data = await res.json();
+          detail = data.detail || data.message || detail;
+        } catch {}
+        setMessage({ type: 'error', text: `❌ ${detail}` });
+      }
     } catch {
       setMessage({ type: 'error', text: '❌ فشل الاتصال بالسيرفر' });
     }
@@ -186,7 +206,7 @@ export default function SettingsDialog({ show, onClose }) {
     }
     setSavingProfile(true);
     try {
-      const res = await fetch(`${API_URL}/bot/set-chrome-profile`, {
+      const res = await authFetch(`${API_URL}/bot/set-chrome-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile_folder: selectedProfile })
@@ -225,7 +245,7 @@ export default function SettingsDialog({ show, onClose }) {
     setSavingSafety(true);
     try {
       await Promise.all(Object.entries(normalized).map(([key, value]) => (
-        fetch(`${API_URL}/config/${key}`, {
+        authFetch(`${API_URL}/config/${key}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ value })
@@ -242,7 +262,7 @@ export default function SettingsDialog({ show, onClose }) {
   const handleLogout = async () => {
     if (!confirm('⚠️ هل أنت متأكد؟ سيتم الخروج من الحساب الحالي ومسح ملفات التعريف.')) return;
     try {
-      const res = await fetch(`${API_URL}/bot/logout`, { method: 'POST' });
+      const res = await authFetch(`${API_URL}/bot/logout`, { method: 'POST' });
       if (res.ok) {
         setMessage({ type: 'success', text: 'تم تسجيل الخروج ومسح الجلسة' });
         setProfileExists(false);
@@ -306,6 +326,14 @@ export default function SettingsDialog({ show, onClose }) {
                 {saving ? '...' : <Save className="w-5 h-5" />}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => pageUrl && window.open(pageUrl, '_blank', 'noopener,noreferrer')}
+              disabled={!pageUrl.trim()}
+              className="mt-2 text-xs font-bold text-blue-600 hover:underline disabled:text-gray-300 disabled:no-underline"
+            >
+              فتح الرابط للتأكد
+            </button>
           </section>
 
           {/* القسم 2: اختيار الحساب */}
