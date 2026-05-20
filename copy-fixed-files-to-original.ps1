@@ -25,7 +25,9 @@ $files = @(
     "backend\app\api\routers\publish.py",
     "backend\app\api\main.py",
     "backend\alembic\versions\9c2d3e4f5a6b_service_pricing_subscriptions.py",
+    "docs\supabase-add-missing-columns.sql",
     "docs\supabase-schema.sql",
+    "docs\supabase-verify-required-columns.sql",
     "agent\README.ar.md",
     "agent\USER_GUIDE.ar.md",
     "agent\create-local-token.bat",
@@ -46,9 +48,31 @@ $files = @(
     "frontend\app\Components\SettingsDialog.jsx"
 )
 
+$blockedFiles = @(
+    "agent\agent_config.json"
+)
+
+$blockedFolders = @(
+    "agent\.venv",
+    "agent\chrome_profile",
+    "agent\downloads",
+    "agent\release",
+    "agent\user_data"
+)
+
 $failed = @()
+$copied = @()
 
 foreach ($file in $files) {
+    if ($blockedFiles -contains $file) {
+        throw "Blocked secret/runtime file should not be copied: $file"
+    }
+    foreach ($blockedFolder in $blockedFolders) {
+        if ($file.StartsWith("$blockedFolder\")) {
+            throw "Blocked runtime folder should not be copied: $file"
+        }
+    }
+
     $source = Join-Path $sourceRoot $file
     $target = Join-Path $targetRoot $file
 
@@ -74,6 +98,7 @@ foreach ($file in $files) {
 
     try {
         Copy-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop
+        $copied += $file
         Write-Host "Copied $file"
     } catch {
         $failed += "$file -> $($_.Exception.Message)"
@@ -88,4 +113,7 @@ if ($failed.Count -gt 0) {
     exit 1
 }
 
+Write-Host ""
 Write-Host "Done. Fixed files copied to original project."
+Write-Host "Copied files count: $($copied.Count)"
+Write-Host "Important: agent_config.json, chrome_profile, downloads, release, .venv, and user_data were not copied."

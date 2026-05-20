@@ -15,6 +15,7 @@ Base.metadata.create_all(bind=engine)
 
 def ensure_runtime_columns():
     """إضافة أعمدة صغيرة مطلوبة عند تشغيل قاعدة قديمة بدون Alembic."""
+    auto_migrate_postgres = os.getenv("AUTO_MIGRATE_ON_STARTUP", "").lower() in ("1", "true", "yes")
 
     required_columns = {
         "groups": {
@@ -69,10 +70,15 @@ def ensure_runtime_columns():
                 for column_name, ddl in columns.items():
                     if column_name not in existing:
                         conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
-        else:
+        elif auto_migrate_postgres:
             for table_name, columns in required_columns.items():
                 for column_name, ddl in columns.items():
-                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_name} {ddl}"))
+                    try:
+                        conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_name} {ddl}"))
+                    except Exception as exc:
+                        print(f"Skipping runtime column migration {table_name}.{column_name}: {exc}")
+        else:
+            print("Skipping PostgreSQL runtime column migration. Use docs/supabase-schema.sql or Alembic for schema changes.")
 
 
 ensure_runtime_columns()
