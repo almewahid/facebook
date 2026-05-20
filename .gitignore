@@ -47,6 +47,12 @@ facebook_bot.db
 
 # ==================== Chrome & Selenium ====================
 chrome_profile/
+agent/agent_config.json
+agent/.venv/
+agent/user_data/
+agent/chrome_profile/
+agent/downloads/
+agent/release/
 chromedriver*
 *.log
 selenium-debug.log

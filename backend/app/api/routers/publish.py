@@ -22,6 +22,10 @@ os.makedirs(MEDIA_UPLOAD_DIR, exist_ok=True)
 CAIRO_TZ = timezone(timedelta(hours=3))
 
 
+def _use_agent_publisher() -> bool:
+    return os.getenv("PUBLISH_EXECUTOR", "agent").strip().lower() == "agent"
+
+
 def _now_cairo() -> datetime:
     return datetime.now(CAIRO_TZ).replace(tzinfo=None)
 
@@ -451,7 +455,7 @@ async def publish_post(
         image_paths=",".join(image_paths) if image_paths else None,
         video_path=video_path,
         publish_method=method,
-        status="pending" if should_schedule else "publishing",
+        status="pending" if (should_schedule or _use_agent_publisher()) else "publishing",
         total_groups=active_groups_count,
         success_count=0,
         failed_count=0,
@@ -468,7 +472,7 @@ async def publish_post(
 
     log = models.BotLog(
         level="info",
-        message=f"📢 بدء النشر في {active_groups_count} مجموعة",
+        message=f"📢 تم إنشاء مهمة نشر في {active_groups_count} مجموعة",
         details=(
             f"post_id={new_post.id} | user_id={current_user.id} | method={method} | صور={len(image_paths)} | فيديو={'نعم' if video_path else 'لا'}"
             f" | جدولة={is_scheduled} | بدء={start_time or '-'} | تأخير={safe_delay_min}-{safe_delay_max}"
@@ -479,7 +483,9 @@ async def publish_post(
     db.commit()
 
     from app.database import DATABASE_URL
-    if should_schedule:
+    if _use_agent_publisher():
+        pass
+    elif should_schedule:
         try:
             from app.bot.scheduler import bot_scheduler
             if bot_scheduler and not bot_scheduler.is_running:
@@ -499,7 +505,11 @@ async def publish_post(
         "message": (
             f"✅ تمت جدولة النشر في {active_groups_count} مجموعة"
             if should_schedule
-            else f"✅ بدأ النشر في {active_groups_count} مجموعة في الخلفية"
+            else (
+                f"✅ تم إرسال مهمة النشر إلى المشغل"
+                if _use_agent_publisher()
+                else f"✅ بدأ النشر في {active_groups_count} مجموعة في الخلفية"
+            )
         ),
         "post_id": new_post.id,
         "total_groups": active_groups_count,
@@ -568,7 +578,7 @@ async def publish_post_safe(
             image_paths=",".join(image_paths) if image_paths else None,
             video_path=video_path,
             publish_method=method,
-            status="publishing",
+            status="pending" if _use_agent_publisher() else "publishing",
             total_groups=active_groups_count,
             success_count=0,
             failed_count=0,
@@ -594,11 +604,16 @@ async def publish_post_safe(
         db.commit()
 
         from app.database import DATABASE_URL
-        background_tasks.add_task(_publish_to_groups_task, new_post.id, DATABASE_URL, current_user.id)
+        if not _use_agent_publisher():
+            background_tasks.add_task(_publish_to_groups_task, new_post.id, DATABASE_URL, current_user.id)
 
         return {
             "status": "accepted",
-            "message": f"✅ بدأ النشر في {active_groups_count} مجموعة في الخلفية",
+            "message": (
+                f"✅ تم إرسال مهمة النشر إلى المشغل"
+                if _use_agent_publisher()
+                else f"✅ بدأ النشر في {active_groups_count} مجموعة في الخلفية"
+            ),
             "post_id": new_post.id,
             "total_groups": active_groups_count,
             "publish_method": method,

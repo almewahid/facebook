@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.database import Base, engine
 from app import models
-from app.api.routers import admin, auth, billing, groups, publish, campaigns, bot, stats_logs_config
+from app.api.routers import admin, agent, auth, billing, groups, publish, campaigns, bot, stats_logs_config
 
 app = FastAPI(title="Facebook Bot API")
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", Path(__file__).resolve().parents[2] / "uploaded_media"))
@@ -26,6 +26,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(billing.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(agent.router, prefix="/api/v1")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(publish.router, prefix="/api/v1")
 app.include_router(campaigns.router, prefix="/api/v1")

@@ -77,7 +77,7 @@ def ensure_runtime_columns():
 
 ensure_runtime_columns()
 
-from app.api.routers import admin, auth, billing, groups, publish, campaigns, bot, stats_logs_config
+from app.api.routers import admin, agent, auth, billing, groups, publish, campaigns, bot, stats_logs_config
 
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", Path(__file__).resolve().parents[1] / "uploaded_media"))
 MEDIA_DIR.mkdir(exist_ok=True)
@@ -110,6 +110,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(billing.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(agent.router, prefix="/api/v1")
 app.include_router(groups.router, prefix="/api/v1")
 app.include_router(publish.router, prefix="/api/v1")
 app.include_router(campaigns.router, prefix="/api/v1")

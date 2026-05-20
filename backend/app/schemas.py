@@ -322,3 +322,20 @@ class BotStatusResponse(BaseModel):
     current_group: Optional[str] = None
     started_at: Optional[datetime] = None
     last_activity: Optional[datetime] = None
+
+
+# ==================== Local Agent Schemas ====================
+
+class AgentHeartbeat(BaseModel):
+    device_name: Optional[str] = None
+    version: Optional[str] = None
+
+class AgentTaskResult(BaseModel):
+    group_id: int
+    status: str = Field(..., pattern="^(success|failed|skipped|pending_approval)$")
+    post_url: Optional[str] = None
+    error_message: Optional[str] = None
+
+class AgentTaskFinish(BaseModel):
+    status: str = Field("done", pattern="^(done|failed|cancelled)$")
+    message: Optional[str] = None

@@ -2,10 +2,11 @@
 
 import { authFetch } from '../utils/authFetch';
 import { useState, useEffect } from 'react';
-import { X, Save, LogOut, LogIn, Globe, User, CheckCircle, AlertCircle, Monitor, RefreshCw } from 'lucide-react';
+import { X, Save, LogOut, LogIn, Globe, User, CheckCircle, AlertCircle, Monitor, RefreshCw, Copy } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 const IS_REMOTE_API = /^https?:\/\//i.test(API_URL) && !/localhost|127\.0\.0\.1/i.test(API_URL);
+const TOKEN_STORAGE_KEY = 'fb_poster_access_token';
 
 /**
  * مكون زر فتح المتصفح
@@ -115,6 +116,7 @@ export default function SettingsDialog({ show, onClose }) {
     SAFETY_REST_MAX_MINUTES: '3',
   });
   const [savingSafety, setSavingSafety] = useState(false);
+  const [agentTokenCopied, setAgentTokenCopied] = useState(false);
 
   // تحميل البيانات عند فتح النافذة
   useEffect(() => {
@@ -269,6 +271,22 @@ export default function SettingsDialog({ show, onClose }) {
       }
     } catch {
       setMessage({ type: 'error', text: '❌ فشل تنفيذ العملية' });
+    }
+  };
+
+  const copyAgentToken = async () => {
+    try {
+      const token = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+      if (!token) {
+        setMessage({ type: 'error', text: 'سجل الدخول أولاً حتى يظهر توكن الـ Agent' });
+        return;
+      }
+      await navigator.clipboard.writeText(token);
+      setAgentTokenCopied(true);
+      setMessage({ type: 'success', text: 'تم نسخ توكن الـ Agent' });
+      setTimeout(() => setAgentTokenCopied(false), 2500);
+    } catch {
+      setMessage({ type: 'error', text: 'تعذر نسخ التوكن' });
     }
   };
 
@@ -494,6 +512,24 @@ export default function SettingsDialog({ show, onClose }) {
                 <LogOut className="w-3 h-3" /> مسح بيانات الجلسة الحالية
               </button>
             )}
+          </section>
+
+          <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+            <label className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+              <Monitor className="w-4 h-4 text-blue-600" />
+              ربط Agent المحلي
+            </label>
+            <p className="mb-3 text-xs leading-6 text-gray-600">
+              انسخ هذا التوكن والصقه في برنامج الـ Agent على جهاز المستخدم. التوكن يربط البرنامج بهذا الحساب فقط.
+            </p>
+            <button
+              type="button"
+              onClick={copyAgentToken}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white hover:bg-blue-700"
+            >
+              {agentTokenCopied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {agentTokenCopied ? 'تم النسخ' : 'نسخ توكن الـ Agent'}
+            </button>
           </section>
         </div>
 
